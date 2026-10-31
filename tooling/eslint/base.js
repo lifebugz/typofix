@@ -5,11 +5,10 @@ import tseslint from 'typescript-eslint'
 // Types the engine hands a mod: mods cannot make them readonly.
 const engineTypes = [
   'EngineInterface',
-  'Engine',
   'ModelCompleteResult',
   'ProcessRunResult',
 ]
-const engineTestTypes = ['MockClock']
+const engineTestTypes = ['Engine', 'MockClock']
 
 export const base = defineConfig(
   {
