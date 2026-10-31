@@ -8,41 +8,53 @@ import type {
 } from 'claude-code'
 
 import {
+  addReport,
   addToWordList,
-  applyChoice,
-  ARGUMENT_GAP,
-  BACKENDS,
+  askedWords,
   buildRewriteRequest,
   CHECK_DELAY_MS,
+  checkerInput,
+  chooseCandidates,
+  describeGuess,
   describeList,
   diffSplice,
   extraBackend,
+  formatRewrites,
   hunspellDictionary,
   IDLE,
   isDictionaryLanguage,
-  isOneWord,
+  isNewList,
+  isRefusedRun,
+  isSpellServerTimeout,
+  keptAfterServerTimeout,
   listedWords,
-  listSignature,
-  maskCode,
   MAX_HUNSPELL_MISSES,
   mergeSpans,
-  offeredSpan,
+  mergeWordKeys,
+  notShipped,
+  offeredAtCursor,
   parseRewriteReply,
   parseWordList,
-  PROJECT_WORDS_HEADER,
+  parseWordsArgs,
+  planChoice,
   removeFromWordList,
+  removeReport,
   rephraseLimits,
+  respan,
   REWRITE_LABELS,
-  SCRIPT_WARNING,
+  scriptWarning,
   shiftSpans,
   SHIPPED_WORDS_FILE,
-  SPELL_SERVER_TIMEOUT,
+  spanSignature,
   SPELL_TIMEOUT_MS,
+  stillMatching,
+  stringsIn,
   toIssue,
-  tokenAt,
   USER_WORDS_HEADER,
   withoutIgnored,
+  withoutWord,
   wordKey,
+  wordListHeader,
   WORDS_FILE,
   type Backend,
   type Checked,
@@ -51,6 +63,7 @@ import {
   type RephraseOutcome,
   type Span,
   type Splice,
+  type WordFileEdit,
   type WordLevel,
 } from './core/index'
 import { focusShortcut } from './keybindings'
@@ -117,13 +130,6 @@ const isOffering = atom(
 )
 const rephrase = atom({ plugin: 'typofix', key: 'rephrase' } as const, IDLE)
 
-function candidateBackends(): readonly Backend[] {
-  if (live.backend === undefined) {
-    return BACKENDS
-  }
-  return live.backend === null ? [] : [live.backend]
-}
-
 const live: Live = {
   language: '',
   shortcut: focusShortcut(undefined),
@@ -189,7 +195,7 @@ async function resetState($: EngineInterface): Promise<void> {
 }
 
 function offeredAt(text: string, cursor: number): Span | undefined {
-  return offeredSpan(live.spans, tokenAt(text, cursor))
+  return offeredAtCursor(live.spans, text, cursor)
 }
 
 async function setOffering($: EngineInterface, offer: boolean): Promise<void> {
@@ -273,7 +279,7 @@ async function runSpellCheck(
   }
   await readShortcut($)
   if (text !== live.draftText) {
-    live.spans = shiftSpans(live.spans, diffSplice(live.draftText, text), text)
+    live.spans = respan(live.spans, live.draftText, text)
     live.draftText = text
   }
   if (text.trim() === '' || text.startsWith('/')) {
@@ -348,8 +354,8 @@ async function restoreOvertaken(
   ) {
     return false
   }
-  const spans = shiftSpans(live.spans, diffSplice(live.draftText, draft), draft)
-  const offered = offeredSpan(spans, tokenAt(draft, draft.length))
+  const spans = respan(live.spans, live.draftText, draft)
+  const offered = offeredAtCursor(spans, draft, draft.length)
   const filled = await $.prompt.fill({
     text: draft,
     mode: 'replace',
@@ -365,9 +371,7 @@ async function showIssues(
   $: EngineInterface,
   spans: readonly Span[],
 ): Promise<void> {
-  const isNew =
-    live.hiddenFor !== undefined &&
-    listSignature(spans.map(toIssue)) !== live.hiddenFor
+  const isNew = isNewList(live.hiddenFor, spans)
   await writeIssues($, spans)
   if (isNew) {
     live.hiddenFor = undefined
@@ -418,7 +422,7 @@ async function runBackends(
   $: EngineInterface,
   text: string,
 ): Promise<Span[] | undefined> {
-  const candidates = candidateBackends()
+  const candidates = chooseCandidates(live.backend)
   for (const candidate of candidates) {
     const found = await runBackend($, candidate, text)
     if (found === 'unavailable') {
@@ -429,9 +433,7 @@ async function runBackends(
       candidate.name === 'osascript'
         ? await withExtra($, found, text)
         : found?.spans
-    return spans?.filter(
-      span => text.slice(span.start, span.end) === span.original,
-    )
+    return spans === undefined ? undefined : stillMatching(spans, text)
   }
   if (live.backend === undefined) {
     live.backend = null
@@ -449,10 +451,7 @@ async function withExtra(
     return found?.spans
   }
   if (!isDictionaryLanguage(live.hunspell, live.language, found.guess)) {
-    const guess =
-      found.guess === undefined
-        ? ''
-        : ` (macOS reads ${found.guess.language}, ${String(found.guess.confidence)})`
+    const guess = describeGuess(found.guess)
     $.ui.log(
       `typofix: hunspell -d ${live.hunspell} skips a draft in another language${guess}`,
       { to: 'debug' },
@@ -495,7 +494,7 @@ async function runBackend(
       // hunspell loads a dictionary and a word list from its working folder
       // first, so a checker must never run in the opened project.
       cwd: $.plugin.root,
-      stdin: backend.input(maskCode(text)),
+      stdin: checkerInput(backend, text),
       timeoutMs: SPELL_TIMEOUT_MS,
     })
   } catch (error) {
@@ -521,7 +520,7 @@ async function runBackend(
     return live.knownPrograms.has(backend.name) ? undefined : 'unavailable'
   }
 
-  if (ran.exitCode !== 0 && ran.stdout.trim() === '') {
+  if (isRefusedRun(ran.exitCode, ran.stdout)) {
     $.ui.log(
       `typofix: ${backend.name} exited ${String(ran.exitCode)}: ${ran.stderr.split('\n')[0] ?? ''}`,
       {
@@ -532,12 +531,10 @@ async function runBackend(
   }
   live.knownPrograms.add(backend.name)
 
-  const warning = ran.stderr
-    .split('\n')
-    .find(line => line.startsWith(SCRIPT_WARNING))
+  const warning = scriptWarning(ran.stderr)
   if (warning !== undefined && !live.hasWarned) {
     live.hasWarned = true
-    $.ui.toast(warning.slice(SCRIPT_WARNING.length).trim(), { timeoutMs: 8000 })
+    $.ui.toast(warning, { timeoutMs: 8000 })
   }
 
   // Parse against the draft itself: masking blanks code next to quotes, and
@@ -548,7 +545,7 @@ async function runBackend(
       to: 'debug',
     })
   }
-  if (backend.name !== 'osascript' || !SPELL_SERVER_TIMEOUT.test(ran.stderr)) {
+  if (!isSpellServerTimeout(backend.name, ran.stderr)) {
     return checked
   }
   // A spell server that is still starting answers "no typos" with exit 0.
@@ -562,7 +559,7 @@ async function runBackend(
   if (!isRetry) {
     return runBackend($, backend, text, true)
   }
-  return checked !== undefined && checked.spans.length > 0 ? checked : undefined
+  return keptAfterServerTimeout(checked)
 }
 
 async function configDir($: EngineInterface): Promise<string> {
@@ -604,7 +601,7 @@ async function readWordKeys($: EngineInterface): Promise<ReadonlySet<string>> {
     readWordList($, 'project'),
     readLegacyWords($),
   ])
-  return new Set([...shipped, ...user, ...project, ...legacy.map(wordKey)])
+  return mergeWordKeys([shipped, user, project], legacy)
 }
 
 // The shipped list changes only with a new version, which reloads the module.
@@ -659,11 +656,7 @@ async function readWordFile(
 async function readLegacyWords($: EngineInterface): Promise<string[]> {
   try {
     const stored = await $.store.get(IGNORED_KEY)
-    return Array.isArray(stored)
-      ? stored.filter(
-          (word: unknown): word is string => typeof word === 'string',
-        )
-      : []
+    return stringsIn(stored)
   } catch (error) {
     $.ui.log(`typofix: could not read the store: ${String(error)}`, {
       to: 'debug',
@@ -821,39 +814,36 @@ async function pickChoice(
 ): Promise<void> {
   const { text } = await $.prompt.read()
   await syncDraft($, text)
-  const target = live.spans.find(span => span.id === id)
-  if (target === undefined) {
+  const plan = planChoice(live.spans, id, text, choice)
+  if (plan.kind === 'gone') {
     $.ui.toast('that word changed; the next check looks again')
     return
   }
-  const rest = live.spans.filter(span => span.id !== id)
-  const applied = applyChoice(text, target, choice)
-  if (applied === undefined) {
+  if (plan.kind === 'moved') {
     $.ui.toast('that word changed; the next check looks again')
-    await writeIssues($, rest)
+    await writeIssues($, plan.rest)
     return
   }
 
-  const shifted = shiftSpans(rest, applied.splice, applied.text)
   const filled = await $.prompt.fill({
-    text: applied.text,
+    text: plan.text,
     mode: 'replace',
-    decorations: decorationsFor(shifted),
+    decorations: decorationsFor(plan.spans),
   })
   if (!filled.isFilled) {
     $.ui.toast('the prompt box did not take the fix')
     return
   }
   // The box change of the fill itself may have synced the draft already.
-  if (live.draftText !== text && live.draftText !== applied.text) {
+  if (live.draftText !== text && live.draftText !== plan.text) {
     return
   }
-  noteEdit(applied.text)
-  live.draftText = applied.text
-  live.checkedText = applied.text
-  await writeIssues($, shifted)
+  noteEdit(plan.text)
+  live.draftText = plan.text
+  live.checkedText = plan.text
+  await writeIssues($, plan.spans)
   await setOffering($, false)
-  scheduleCheck($, applied.text)
+  scheduleCheck($, plan.text)
 }
 
 async function pickRewrite($: EngineInterface, rewrite: string): Promise<void> {
@@ -894,11 +884,11 @@ async function ignoreWord($: EngineInterface, word: string): Promise<void> {
   await addWords($, await userWordsPath($), USER_WORDS_HEADER, [word])
   const { text } = await $.prompt.read()
   await syncDraft($, text)
-  const rest = withoutIgnored(live.spans, new Set([wordKey(word)]))
+  const rest = withoutWord(live.spans, word)
   if (rest.length === live.spans.length) {
     return
   }
-  const offered = offeredSpan(rest, tokenAt(text, text.length))
+  const offered = offeredAtCursor(rest, text, text.length)
   live.spans = rest
   if (isPanel()) {
     await writeIssues($, live.spans)
@@ -969,7 +959,7 @@ function syncPanelPoll($: EngineInterface): void {
 }
 
 async function hideIssues($: EngineInterface): Promise<void> {
-  live.hiddenFor = listSignature(live.spans.map(toIssue))
+  live.hiddenFor = spanSignature(live.spans)
   await update($, isHidden, () => true)
 }
 
@@ -977,22 +967,20 @@ async function runWordsCommand(
   $: EngineInterface,
   args: string,
 ): Promise<string> {
-  const [action = '', ...words] = args.trim().split(ARGUMENT_GAP)
-  const isEdit = action === 'add' || action === 'share' || action === 'remove'
-  if (action !== '' && (!isEdit || words.length === 0)) {
+  const parsed = parseWordsArgs(args)
+  if (parsed.kind === 'usage') {
     return WORDS_USAGE
   }
-  const notWords = words.filter(word => !isOneWord(word))
-  if (notWords.length > 0) {
-    return `not a word: ${notWords.join(', ')} (a word needs a letter, and # starts a comment)`
+  if (parsed.kind === 'notWords') {
+    return `not a word: ${parsed.words.join(', ')} (a word needs a letter, and # starts a comment)`
   }
   try {
-    if (action === '') {
+    if (parsed.kind === 'list') {
       return await listWords($)
     }
-    return action === 'remove'
-      ? await removeCommand($, words)
-      : await addCommand($, action === 'add' ? 'user' : 'project', words)
+    return parsed.kind === 'remove'
+      ? await removeCommand($, parsed.words)
+      : await addCommand($, parsed.level, parsed.words)
   } catch (error) {
     return `that did not work: ${reasonOf(error, $.plugin.name)}`
   }
@@ -1044,29 +1032,11 @@ async function addCommand(
   if (path === undefined) {
     return "no project list here: this project's .claude folder is your own. Use /typo-words add."
   }
-  const header = level === 'user' ? USER_WORDS_HEADER : PROJECT_WORDS_HEADER
+  const header = wordListHeader(level)
   const shipped = await readShippedKeys($)
-  const asked = listedWords(words.join('\n'))
-  const isShipped = (word: string): boolean => shipped.has(wordKey(word))
-  const added = await addWords(
-    $,
-    path,
-    header,
-    asked.filter(word => !isShipped(word)),
-  )
-  const isAdded = (word: string): boolean =>
-    added.some(other => wordKey(other) === wordKey(word))
-  const already = asked.filter(word => !isShipped(word) && !isAdded(word))
-  return [
-    ...(added.length > 0 ? [`added ${added.join(', ')} to ${path}`] : []),
-    ...(level === 'project' && added.length > 0
-      ? ['Commit the file to share it.']
-      : []),
-    ...(already.length > 0
-      ? [`already in ${path}: ${already.join(', ')}`]
-      : []),
-    ...asked.filter(isShipped).map(word => `${word} ships with typofix`),
-  ].join('\n')
+  const asked = askedWords(words)
+  const added = await addWords($, path, header, notShipped(asked, shipped))
+  return addReport({ level, path, asked, added, shipped })
 }
 
 async function removeCommand(
@@ -1075,7 +1045,7 @@ async function removeCommand(
 ): Promise<string> {
   // A word still in the store would stay ignored after its line is gone.
   await moveLegacyWords($)
-  const asked = listedWords(words.join('\n'))
+  const asked = askedWords(words)
   const keys = new Set(asked.map(wordKey))
   const shipped = await readShippedKeys($)
   const project = await projectWordsPath($)
@@ -1083,27 +1053,7 @@ async function removeCommand(
     await removeFrom($, await userWordsPath($), keys),
     ...(project === undefined ? [] : [await removeFrom($, project, keys)]),
   ]
-  const removed = new Set(edits.flatMap(edit => edit.removed).map(wordKey))
-  const isListedNowhere = edits.every(edit => edit.error === undefined)
-  const missing = asked.filter(
-    word => !removed.has(wordKey(word)) && !shipped.has(wordKey(word)),
-  )
-  return [
-    ...edits.flatMap(edit => {
-      if (edit.error !== undefined) {
-        return [`could not change ${edit.path}: ${edit.error}`]
-      }
-      return edit.removed.length > 0
-        ? [`removed ${edit.removed.join(', ')} from ${edit.path}`]
-        : []
-    }),
-    ...asked
-      .filter(word => shipped.has(wordKey(word)))
-      .map(word => `${word} ships with typofix, so it stays ignored`),
-    ...(isListedNowhere && missing.length > 0
-      ? [`not in your lists: ${missing.join(', ')}`]
-      : []),
-  ].join('\n')
+  return removeReport(edits, asked, shipped)
 }
 
 // One file's refusal must not hide what changed in the other.
@@ -1111,7 +1061,7 @@ async function removeFrom(
   $: EngineInterface,
   path: string,
   keys: ReadonlySet<string>,
-): Promise<{ path: string; removed: string[]; error?: string }> {
+): Promise<WordFileEdit> {
   try {
     return { path, removed: await removeWords($, path, keys) }
   } catch (error) {
@@ -1252,14 +1202,7 @@ export const register: Register = (on, options) => {
     if ('reason' in outcome) {
       return { text: outcome.reason }
     }
-    return {
-      text: outcome.rewrites
-        .map(
-          (rewrite, i) =>
-            `${String(i + 1)} ${REWRITE_LABELS[i] ?? ''}: ${rewrite}`,
-        )
-        .join('\n'),
-    }
+    return { text: formatRewrites(outcome.rewrites) }
   })
 
   on('command.run', { command: 'typo-words' }, async ($, e) => ({

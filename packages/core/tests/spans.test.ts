@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
-import { diffSplice, shiftSpans, tokenAt } from '../src/text/spans'
+import {
+  diffSplice,
+  respan,
+  shiftSpans,
+  stillMatching,
+  tokenAt,
+} from '../src/text/spans'
 import { DRAFT, span } from './helpers'
 
 describe('shiftSpans', () => {
@@ -148,5 +154,29 @@ describe('tokenAt', () => {
     })
     expect(inside).toEqual({ token: run, start: 0, cursor: run.length })
     expect(elapsedMs).toBeLessThan(50)
+  })
+})
+
+describe('stillMatching', () => {
+  test('keeps the spans whose text is still in place', () => {
+    const before = 'fix teh bug wiht tests'
+    const teh = span(before, 'teh')
+    const wiht = span(before, 'wiht')
+    expect(stillMatching([teh, wiht], 'fix tea bug wiht tests')).toEqual([wiht])
+  })
+})
+
+describe('respan', () => {
+  test('moves the spans across the one change between two drafts', () => {
+    const before = 'fix teh bug wiht tests'
+    const after = 'so fix the bug wiht tests'
+    const moved = respan(
+      [span(before, 'teh'), span(before, 'wiht')],
+      before,
+      after,
+    )
+    expect(moved.map(s => [s.original, s.start])).toEqual([
+      ['wiht', after.indexOf('wiht')],
+    ])
   })
 })

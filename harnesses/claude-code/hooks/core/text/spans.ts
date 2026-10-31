@@ -68,3 +68,17 @@ export function tokenAt(text: string, cursor: number): Token {
   }
   return { token: text.slice(start, cursor), start, cursor }
 }
+
+export function stillMatching(spans: readonly Span[], text: string): Span[] {
+  return spans.filter(
+    span => text.slice(span.start, span.end) === span.original,
+  )
+}
+
+export function respan(
+  spans: readonly Span[],
+  before: string,
+  after: string,
+): Span[] {
+  return shiftSpans(spans, diffSplice(before, after), after)
+}

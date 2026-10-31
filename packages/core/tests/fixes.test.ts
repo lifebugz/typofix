@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 
-import { applyChoice, offeredSpan } from '../src/fixes'
+import {
+  applyChoice,
+  isNewList,
+  offeredAtCursor,
+  offeredSpan,
+  planChoice,
+  spanSignature,
+} from '../src/fixes'
 import { tokenAt } from '../src/text/spans'
 import { DRAFT, span } from './helpers'
 
@@ -46,4 +53,67 @@ test('the offered word is the one that ends at the cursor and has fixes', () => 
   expect(offeredSpan([teh, wiht], tokenAt(text, 7))).toBe(teh)
   expect(offeredSpan([teh, wiht], tokenAt(text, 12))).toBeUndefined()
   expect(offeredSpan([teh, wiht], tokenAt(text, 3))).toBeUndefined()
+})
+
+describe('offeredAtCursor', () => {
+  test('is the span with fixes that ends at the cursor', () => {
+    const text = 'fix teh wiht'
+    const teh = span(text, 'teh')
+    expect(offeredAtCursor([teh], text, 7)).toBe(teh)
+    expect(offeredAtCursor([teh], text, 3)).toBeUndefined()
+  })
+})
+
+describe('spanSignature', () => {
+  test('reads the kind, the word in lower case and the fixes', () => {
+    expect(spanSignature([span(DRAFT, 'teh')])).toBe(
+      'spelling:teh>the|tech|tea',
+    )
+  })
+
+  test('ignores where a word stands', () => {
+    const moved = span(`so ${DRAFT}`, 'teh')
+    expect(spanSignature([moved])).toBe(spanSignature([span(DRAFT, 'teh')]))
+  })
+})
+
+describe('isNewList', () => {
+  const teh = span(DRAFT, 'teh')
+  const check = span(DRAFT, 'check', 'grammar')
+
+  test('is false while nothing is hidden, or for the hidden list itself', () => {
+    expect(isNewList(undefined, [teh])).toBe(false)
+    expect(isNewList(spanSignature([teh]), [teh])).toBe(false)
+  })
+
+  test('is true once the list differs from the hidden one', () => {
+    expect(isNewList(spanSignature([teh]), [teh, check])).toBe(true)
+  })
+})
+
+describe('planChoice', () => {
+  const text = 'fix teh bug wiht tests'
+  const teh = span(text, 'teh')
+  const wiht = span(text, 'wiht')
+
+  test('is gone when no span has the id', () => {
+    expect(planChoice([teh, wiht], 'spelling:0:nope', text, 'the')).toEqual({
+      kind: 'gone',
+    })
+  })
+
+  test('is moved, with the other spans, when the word left the draft', () => {
+    expect(
+      planChoice([teh, wiht], teh.id, 'fix tea bug wiht tests', 'the'),
+    ).toEqual({ kind: 'moved', rest: [wiht] })
+  })
+
+  test('is applied, with the new draft and the other spans moved', () => {
+    const fixed = planChoice([teh, wiht], wiht.id, text, 'with')
+    expect(fixed).toEqual({
+      kind: 'applied',
+      text: 'fix teh bug with tests',
+      spans: [teh],
+    })
+  })
 })

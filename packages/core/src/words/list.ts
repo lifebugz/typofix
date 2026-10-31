@@ -1,5 +1,5 @@
 import { foldApostrophes, LETTER } from '../text/boundaries'
-import type { Span } from '../types'
+import type { Span, WordLevel } from '../types'
 
 export const WORDS_FILE = 'typofix-words.txt'
 
@@ -105,4 +105,19 @@ export function removeFromWordList(
     return kept === '' ? [] : [kept]
   })
   return { text: lines.join('\n'), removed }
+}
+
+export function withoutWord(spans: readonly Span[], word: string): Span[] {
+  return withoutIgnored(spans, new Set([wordKey(word)]))
+}
+
+export function mergeWordKeys(
+  lists: readonly ReadonlySet<string>[],
+  words: readonly string[],
+): ReadonlySet<string> {
+  return new Set([...lists.flatMap(list => [...list]), ...words.map(wordKey)])
+}
+
+export function wordListHeader(level: WordLevel): readonly string[] {
+  return level === 'user' ? USER_WORDS_HEADER : PROJECT_WORDS_HEADER
 }

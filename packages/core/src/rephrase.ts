@@ -64,3 +64,11 @@ export function rephraseLimits(source: string): RephraseLimits {
     timeoutMs: Math.min(REPHRASE_MAX_TIMEOUT_MS, seconds * 1000),
   }
 }
+
+export function formatRewrites(rewrites: readonly string[]): string {
+  return rewrites
+    .map(
+      (rewrite, i) => `${String(i + 1)} ${REWRITE_LABELS[i] ?? ''}: ${rewrite}`,
+    )
+    .join('\n')
+}

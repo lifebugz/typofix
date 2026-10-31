@@ -1,4 +1,5 @@
 import { MACOS_SCRIPT } from '../assets'
+import { maskCode } from '../text/mask'
 import type { Checked } from '../types'
 import { parseIspell, toIspellInput } from './ispell'
 import { parseMacResult } from './macos'
@@ -63,3 +64,20 @@ export const BACKENDS: readonly Backend[] = [
     parse: parseIspellChecked,
   },
 ]
+
+export function chooseCandidates(
+  chosen: Backend | null | undefined,
+): readonly Backend[] {
+  if (chosen === undefined) {
+    return BACKENDS
+  }
+  return chosen === null ? [] : [chosen]
+}
+
+export function checkerInput(backend: Backend, text: string): string {
+  return backend.input(maskCode(text))
+}
+
+export function isRefusedRun(exitCode: number, stdout: string): boolean {
+  return exitCode !== 0 && stdout.trim() === ''
+}

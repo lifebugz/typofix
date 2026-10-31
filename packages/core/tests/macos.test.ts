@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
-import { parseMacResult } from '../src/checkers/macos'
+import {
+  describeGuess,
+  isSpellServerTimeout,
+  keptAfterServerTimeout,
+  parseMacResult,
+  scriptWarning,
+} from '../src/checkers/macos'
 import { DRAFT, span } from './helpers'
 
 describe('parseMacResult', () => {
@@ -144,5 +150,56 @@ describe('parseMacResult', () => {
     expect(parseMacResult('[]', DRAFT)).toBeUndefined()
     expect(parseMacResult('{"language": "en"}', DRAFT)).toBeUndefined()
     expect(parseMacResult('{"issues": {}}', DRAFT)).toBeUndefined()
+  })
+})
+
+describe('scriptWarning', () => {
+  test('is the first line the script marks, without its mark', () => {
+    expect(
+      scriptWarning(
+        'osascript noise\ntypofix: grammar checks are off\ntypofix: later',
+      ),
+    ).toBe('grammar checks are off')
+  })
+
+  test('is undefined when no line carries the mark', () => {
+    expect(scriptWarning('')).toBeUndefined()
+    expect(scriptWarning('a typofix: inside a line')).toBeUndefined()
+  })
+})
+
+describe('isSpellServerTimeout', () => {
+  const timedOut = 'NSSpellServer dataFromCheckingString timed out'
+
+  test('is a check request of the macOS spell server that timed out', () => {
+    expect(isSpellServerTimeout('osascript', `x\n${timedOut}\n`)).toBe(true)
+  })
+
+  test('is not a guesses timeout, or the same text from another backend', () => {
+    expect(
+      isSpellServerTimeout(
+        'osascript',
+        'NSSpellServer guessesForWord timed out',
+      ),
+    ).toBe(false)
+    expect(isSpellServerTimeout('hunspell', timedOut)).toBe(false)
+  })
+})
+
+describe('keptAfterServerTimeout', () => {
+  test('keeps only a result that lists typos', () => {
+    const found = { spans: [span(DRAFT, 'teh')] }
+    expect(keptAfterServerTimeout(found)).toBe(found)
+    expect(keptAfterServerTimeout({ spans: [] })).toBeUndefined()
+    expect(keptAfterServerTimeout(undefined)).toBeUndefined()
+  })
+})
+
+describe('describeGuess', () => {
+  test('names the language macOS read, or nothing without a guess', () => {
+    expect(describeGuess({ language: 'de', confidence: 0.97 })).toBe(
+      ' (macOS reads de, 0.97)',
+    )
+    expect(describeGuess(undefined)).toBe('')
   })
 })

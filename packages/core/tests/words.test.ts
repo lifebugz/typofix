@@ -1,15 +1,27 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  addReport,
+  askedWords,
+  notShipped,
+  parseWordsArgs,
+  removeReport,
+} from '../src/words/command'
+import {
   addToWordList,
   listedWords,
+  mergeWordKeys,
   parseWordList,
+  PROJECT_WORDS_HEADER,
   removeFromWordList,
+  USER_WORDS_HEADER,
   withoutIgnored,
+  withoutWord,
   wordKey,
+  wordListHeader,
   writtenWord,
 } from '../src/words/list'
-import { span } from './helpers'
+import { DRAFT, span } from './helpers'
 
 describe('word lists', () => {
   const HEADER = ['# my words', '# one a line']
@@ -126,5 +138,123 @@ describe('word lists', () => {
       text,
       removed: [],
     })
+  })
+})
+
+describe('word list steps', () => {
+  test('withoutWord drops the spelling spans of one word in any case', () => {
+    const teh = span(DRAFT, 'teh')
+    const check = span(DRAFT, 'check', 'grammar')
+    expect(withoutWord([teh, check], 'Teh')).toEqual([check])
+  })
+
+  test('mergeWordKeys joins the lists and the keys of loose words', () => {
+    expect(
+      mergeWordKeys([new Set(['tovan']), new Set(['gonna'])], ['Kubectl']),
+    ).toEqual(new Set(['tovan', 'gonna', 'kubectl']))
+  })
+
+  test('wordListHeader is the header of each level', () => {
+    expect(wordListHeader('user')).toBe(USER_WORDS_HEADER)
+    expect(wordListHeader('project')).toBe(PROJECT_WORDS_HEADER)
+  })
+})
+
+describe('parseWordsArgs', () => {
+  test('lists with no arguments', () => {
+    expect(parseWordsArgs('')).toEqual({ kind: 'list' })
+    expect(parseWordsArgs('  ')).toEqual({ kind: 'list' })
+  })
+
+  test('adds for the user, shares for the project, and removes', () => {
+    expect(parseWordsArgs('add Tovan gonna')).toEqual({
+      kind: 'add',
+      level: 'user',
+      words: ['Tovan', 'gonna'],
+    })
+    expect(parseWordsArgs('share Tovan')).toEqual({
+      kind: 'add',
+      level: 'project',
+      words: ['Tovan'],
+    })
+    expect(parseWordsArgs(' remove  Tovan ')).toEqual({
+      kind: 'remove',
+      words: ['Tovan'],
+    })
+  })
+
+  test('answers usage for an unknown action, or an edit with no words', () => {
+    for (const args of ['what', 'add', 'list Tovan', 'what #tag']) {
+      expect(parseWordsArgs(args), args).toEqual({ kind: 'usage' })
+    }
+  })
+
+  test('names the arguments that do not read back as one word', () => {
+    expect(parseWordsArgs('add #tag a#b ok 42')).toEqual({
+      kind: 'notWords',
+      words: ['#tag', 'a#b', '42'],
+    })
+  })
+})
+
+describe('word command reports', () => {
+  const shipped = new Set(['kubectl'])
+
+  test('askedWords reads each word once, without edge punctuation', () => {
+    expect(askedWords(['Tovan', 'tovan', 'gonna,'])).toEqual(['Tovan', 'gonna'])
+  })
+
+  test('notShipped leaves out the words typofix ships', () => {
+    expect(notShipped(['Tovan', 'Kubectl'], shipped)).toEqual(['Tovan'])
+  })
+
+  test('addReport says what was added, what was there, and what ships', () => {
+    expect(
+      addReport({
+        level: 'project',
+        path: '/p/words.txt',
+        asked: ['Tovan', 'gonna', 'kubectl'],
+        added: ['Tovan'],
+        shipped,
+      }),
+    ).toBe(
+      [
+        'added Tovan to /p/words.txt',
+        'Commit the file to share it.',
+        'already in /p/words.txt: gonna',
+        'kubectl ships with typofix',
+      ].join('\n'),
+    )
+    expect(
+      addReport({
+        level: 'user',
+        path: '/u/words.txt',
+        asked: ['kubectl'],
+        added: [],
+        shipped,
+      }),
+    ).toBe('kubectl ships with typofix')
+  })
+
+  test('removeReport reports each file, and names missing words only when no file failed', () => {
+    expect(
+      removeReport(
+        [
+          { path: '/u/words.txt', removed: ['Tovan'] },
+          { path: '/p/words.txt', removed: [], error: 'permission denied' },
+        ],
+        ['Tovan', 'gonna', 'kubectl'],
+        shipped,
+      ),
+    ).toBe(
+      [
+        'removed Tovan from /u/words.txt',
+        'could not change /p/words.txt: permission denied',
+        'kubectl ships with typofix, so it stays ignored',
+      ].join('\n'),
+    )
+    expect(
+      removeReport([{ path: '/u/words.txt', removed: [] }], ['gonna'], shipped),
+    ).toBe('not in your lists: gonna')
   })
 })

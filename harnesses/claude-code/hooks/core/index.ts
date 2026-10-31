@@ -1,9 +1,11 @@
 // GENERATED from packages/core - edit there, run `bun run core:sync`
-export { MACOS_SCRIPT, SHIPPED_WORDS_FILE } from './assets'
+export { SHIPPED_WORDS_FILE } from './assets'
 export {
-  BACKENDS,
   CHECK_DELAY_MS,
+  checkerInput,
+  chooseCandidates,
   extraBackend,
+  isRefusedRun,
   MAX_HUNSPELL_MISSES,
   SPELL_TIMEOUT_MS,
 } from './checkers/backends'
@@ -13,18 +15,31 @@ export {
   isDictionaryLanguage,
   mergeSpans,
 } from './checkers/language'
-export { SCRIPT_WARNING, SPELL_SERVER_TIMEOUT } from './checkers/macos'
-export { applyChoice, listSignature, offeredSpan, toIssue } from './fixes'
-export { isList, isRecord } from './json'
+export {
+  describeGuess,
+  isSpellServerTimeout,
+  keptAfterServerTimeout,
+  scriptWarning,
+} from './checkers/macos'
+export {
+  isNewList,
+  offeredAtCursor,
+  offeredSpan,
+  planChoice,
+  spanSignature,
+  toIssue,
+} from './fixes'
+export type { ChoicePlan } from './fixes'
+export { isList, isRecord, stringsIn } from './json'
 export {
   buildRewriteRequest,
+  formatRewrites,
   IDLE,
   parseRewriteReply,
   rephraseLimits,
   REWRITE_LABELS,
 } from './rephrase'
-export { maskCode } from './text/mask'
-export { diffSplice, shiftSpans, tokenAt } from './text/spans'
+export { diffSplice, respan, shiftSpans, stillMatching } from './text/spans'
 export type {
   Checked,
   LanguageGuess,
@@ -37,16 +52,26 @@ export type {
   TypoIssue,
   WordLevel,
 } from './types'
-export { ARGUMENT_GAP, describeList, isOneWord } from './words/command'
+export {
+  addReport,
+  askedWords,
+  describeList,
+  notShipped,
+  parseWordsArgs,
+  removeReport,
+} from './words/command'
+export type { AddedWords, WordFileEdit, WordsArgs } from './words/command'
 export {
   addToWordList,
   listedWords,
+  mergeWordKeys,
   parseWordList,
   PROJECT_WORDS_HEADER,
   removeFromWordList,
   USER_WORDS_HEADER,
   withoutIgnored,
+  withoutWord,
   wordKey,
+  wordListHeader,
   WORDS_FILE,
-  writtenWord,
 } from './words/list'

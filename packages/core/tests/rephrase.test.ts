@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 
-import { buildRewriteRequest, parseRewriteReply } from '../src/rephrase'
+import {
+  buildRewriteRequest,
+  formatRewrites,
+  parseRewriteReply,
+} from '../src/rephrase'
 
 describe('rewrites', () => {
   test('sends the draft inside tags', () => {
@@ -22,4 +26,10 @@ describe('rewrites', () => {
     expect(parseRewriteReply('{"rewrites": ["a", " ", "c"]}')).toBeUndefined()
     expect(parseRewriteReply('Sure! Here you go.')).toBeUndefined()
   })
+})
+
+test('formatRewrites numbers and labels each rewrite on its own line', () => {
+  expect(formatRewrites(['he went', 'he went to the store', 'went'])).toBe(
+    '1 fixed: he went\n2 natural: he went to the store\n3 short: went',
+  )
 })
