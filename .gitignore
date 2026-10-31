@@ -1,0 +1,26 @@
+# Personal, per-project instructions - never shared
+CLAUDE.local.md
+
+# Claude Code local-scope settings (personal machine state)
+.claude/settings.local.json
+.claude/worktrees/
+
+# macOS
+.DS_Store
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# Types the Claude Code engine writes beside a mod when it loads it
+harnesses/*/.claude-plugin/types/
+
+node_modules/
+
+# Logs & secrets
+*.log
+.env
+.env.*
+!.env.example

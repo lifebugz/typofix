@@ -1,0 +1,27 @@
+{
+  "name": "typofix-dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "types:sync": "sh tooling/scripts/sync-types.sh",
+    "types:check": "sh tooling/scripts/check-types-version.sh",
+    "typecheck": "node_modules/typescript-latest/bin/tsc -p tsconfig.json && node_modules/typescript-latest/bin/tsc -p harnesses/claude-code/tsconfig.json && node_modules/typescript-latest/bin/tsc -p harnesses/claude-code/scripts/tsconfig.json",
+    "lint": "sh tooling/scripts/lint.sh",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "claude plugin test harnesses/claude-code",
+    "validate": "claude plugin validate --strict harnesses/claude-code && claude plugin validate --strict .",
+    "check": "bun run types:check && bun run typecheck && bun run lint && bun run format:check && bun run test && bun run validate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
+    "eslint": "^10.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsdoc": "^65.2.4",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0",
+    "typescript-eslint": "^8.71.1",
+    "typescript-latest": "npm:typescript@^7.0.2"
+  }
+}

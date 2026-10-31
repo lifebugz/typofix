@@ -1,0 +1,4 @@
+.claude/
+tooling/types/
+harnesses/*/.claude-plugin/types/
+bun.lock

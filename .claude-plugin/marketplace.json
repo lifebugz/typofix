@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "typofix",
+  "owner": {
+    "name": "lifebugz",
+    "email": "244013463+lifebugz@users.noreply.github.com"
+  },
+  "description": "Single-plugin marketplace for typofix, which checks the spelling and grammar of your Claude Code prompt as you type.",
+  "plugins": [
+    {
+      "name": "typofix",
+      "description": "Checks the spelling and grammar of your prompt as you type, with 3 fixes for each mistake, and rewrites the whole draft with Haiku when you ask.",
+      "author": {
+        "name": "lifebugz"
+      },
+      "category": "productivity",
+      "source": "./harnesses/claude-code",
+      "homepage": "https://github.com/lifebugz/typofix"
+    }
+  ]
+}

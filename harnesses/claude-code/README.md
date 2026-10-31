@@ -15,7 +15,7 @@ in a second language.
   **natural** (how a native speaker would say it) and **short**. Pick one, and
   it replaces the draft.
 
-![typofix finds whaat and youu while a sentence is typed, offers happen right above the prompt for happpen, and Tab takes it](media/typing.gif)
+![typofix finds whaat and youu while a sentence is typed, offers happen right above the prompt for happpen, and Tab takes it](../../docs/media/typing.gif)
 
 ## Install
 
@@ -34,7 +34,7 @@ There are two ways to fix a word.
 typed the word, or when you move back to it with the arrow keys. The band steps
 aside and the fixes appear directly above the prompt. The word they fix is bold:
 
-![The suggestion row "happen, fixes happpen" sits right above the prompt, and happpen is bold and underlined](media/fixes.png)
+![The suggestion row "happen, fixes happpen" sits right above the prompt, and happpen is bold and underlined](../../docs/media/fixes.png)
 
 | Key   | What it does                                                         |
 | :---- | :------------------------------------------------------------------- |
@@ -45,14 +45,14 @@ aside and the fixes appear directly above the prompt. The word they fix is bold:
 **2. With the cursor anywhere: the band shortcut, then a letter.** The band
 lists up to 8 mistakes, and each of the first 22 fixes gets its own letter:
 
-![The band lists whaat with a: what, b: wheat and 1: ignore, and youu with c: you, d: your, e: yous and 2: ignore](media/band.png)
+![The band lists whaat with a: what, b: wheat and 1: ignore, and youu with c: you, d: your, e: yous and 2: ignore](../../docs/media/band.png)
 
 Press **ctrl+x tab** (or your own shortcut, below), then the letter. The word is
 fixed and you are back in the prompt, ready to type. The letters never use `i`,
 `r`, `s` or `x`, and never a digit: a row's digit (`1` to `8`) means "this word
 is not a typo" (see [Words that are not typos](#words-that-are-not-typos)).
 
-![ctrl+x tab then c turns youu into you; ctrl+x tab then a turns whaat into what, and the band goes away](media/band.gif)
+![ctrl+x tab then c turns youu into you; ctrl+x tab then a turns whaat into what, and the band goes away](../../docs/media/band.gif)
 
 In the band you can also press a row's digit to ignore that word from now on,
 in all your projects (the first row shows `1: ignore`). Press `r` to rephrase
@@ -64,7 +64,7 @@ on, you can click any fix instead.
 shortcut and then `r`. Haiku writes 3 versions, and a number puts one in the
 prompt box. For a draft with no mistakes, use `/rephrase` (below):
 
-![ctrl+x tab then r: Haiku rewrites "yesterday he go to the store and buyed three apple" three ways, and 2 puts the natural version in the prompt](media/rephrase.gif)
+![ctrl+x tab then r: Haiku rewrites "yesterday he go to the store and buyed three apple" three ways, and 2 puts the natural version in the prompt](../../docs/media/rephrase.gif)
 
 `/rephrase He go to the store yesterday` shows the 3 rewrites in the transcript
 and in the band. Press the band shortcut and then `1`, `2` or `3` (or click one)
