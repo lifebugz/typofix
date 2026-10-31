@@ -2,7 +2,7 @@ import { defineConfig } from 'eslint/config'
 import jsdoc from 'eslint-plugin-jsdoc'
 
 export const jxa = defineConfig({
-  files: ['harnesses/*/scripts/**/*.js'],
+  files: ['packages/core/assets/macos/*.js'],
   languageOptions: {
     sourceType: 'script',
     globals: {

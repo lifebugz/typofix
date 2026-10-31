@@ -18,7 +18,7 @@ import {
   type TestOptions,
 } from 'claude-code/testing'
 
-import { PROJECT_WORDS_HEADER, USER_WORDS_HEADER } from '../hooks/text'
+import { PROJECT_WORDS_HEADER, USER_WORDS_HEADER } from '../hooks/core/index'
 
 const PLUGIN = 'typofix'
 const SURFACES = ['terminal', 'desktop'] as const

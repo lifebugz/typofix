@@ -1,3 +1,4 @@
+// GENERATED from packages/core - edit there, run `bun run core:sync`
 ObjC.import('AppKit')
 ObjC.import('NaturalLanguage')
 

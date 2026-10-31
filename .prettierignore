@@ -2,3 +2,6 @@
 tooling/types/
 harnesses/*/.claude-plugin/types/
 bun.lock
+# Generated from packages/core, and formatted there.
+harnesses/*/hooks/core/
+harnesses/claude-code/scripts/spell-macos.js

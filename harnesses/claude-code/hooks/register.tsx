@@ -7,57 +7,57 @@ import type {
   Timer,
 } from 'claude-code'
 
-import type { Rephrase } from '../types'
 import {
   addToWordList,
   applyChoice,
+  ARGUMENT_GAP,
+  BACKENDS,
   buildRewriteRequest,
-  decorationsFor,
+  CHECK_DELAY_MS,
+  describeList,
   diffSplice,
-  fixLetter,
-  focusShortcut,
+  extraBackend,
   hunspellDictionary,
+  IDLE,
   isDictionaryLanguage,
+  isOneWord,
   listedWords,
   listSignature,
   maskCode,
+  MAX_HUNSPELL_MISSES,
   mergeSpans,
   offeredSpan,
-  parseIspell,
-  parseMacResult,
   parseRewriteReply,
   parseWordList,
   PROJECT_WORDS_HEADER,
   removeFromWordList,
+  rephraseLimits,
+  REWRITE_LABELS,
+  SCRIPT_WARNING,
   shiftSpans,
-  toIspellInput,
+  SHIPPED_WORDS_FILE,
+  SPELL_SERVER_TIMEOUT,
+  SPELL_TIMEOUT_MS,
   toIssue,
   tokenAt,
-  typeaheadRows,
   USER_WORDS_HEADER,
   withoutIgnored,
   wordKey,
-  writtenWord,
+  WORDS_FILE,
+  type Backend,
   type Checked,
+  type Rephrase,
+  type RephraseLimits,
+  type RephraseOutcome,
   type Span,
   type Splice,
-} from './text'
+  type WordLevel,
+} from './core/index'
+import { focusShortcut } from './keybindings'
+import { decorationsFor, fixLetter, typeaheadRows } from './render'
+import { failureOf, reasonOf } from './results'
 
 type RephraseFrom = 'band' | 'command'
-interface RephraseLimits {
-  readonly maxTokens: number
-  readonly timeoutMs: number
-}
-type RephraseOutcome =
-  { readonly rewrites: readonly string[] } | { readonly reason: string }
-type WordLevel = 'user' | 'project'
-
-interface Backend {
-  readonly name: string
-  readonly argv: (root: string, language: string) => string[]
-  readonly input: (text: string) => string
-  readonly parse: (stdout: string, text: string) => Checked | undefined
-}
 
 interface Live {
   language: string
@@ -88,31 +88,17 @@ interface Live {
   wordEdits: Promise<unknown>
 }
 
-const CHECK_DELAY_MS = 400
 // The VS Code panel raises no prompt.edit, so its draft is read on a timer.
 const PANEL_ENTRYPOINT = 'claude-vscode'
 const PANEL_POLL_MS = 300
 // The extension answers an empty box after 4.5 s when the panel is silent.
 const PANEL_SILENT_MS = 4000
-const SPELL_TIMEOUT_MS = 5000
-const MAX_HUNSPELL_MISSES = 3
-const ENGINE_OP = /^\$\.[\w.]+(?:\([^)]*\))?:? /
 const TIMER_SLACK_MS = 500
 const TYPEAHEAD_WAIT_MS = 2000
 const TYPEAHEAD_POLL_MS = 100
-// Haiku's thinking counts toward the cap too, and it cannot be turned off.
-const REPHRASE_MAX_TOKENS = 16000
-const REPHRASE_MIN_TIMEOUT_MS = 20000
-const REPHRASE_MAX_TIMEOUT_MS = 120000
-// Measured on Haiku 5.5: 2.9 ms per reply token and up to 1.9 reply tokens
-// per draft character (Japanese); twice that leaves room for a slow reply.
-const REPHRASE_MS_PER_CHAR = 2 * 2.9 * 1.9
 const MAX_LISTED = 8
 // Where ignored words were kept before the word lists; read until moved.
 const IGNORED_KEY = 'ignored'
-const WORDS_FILE = 'typofix-words.txt'
-const ARGUMENT_GAP = /\s+/u
-const SHIPPED_WORDS_FILE = 'words.txt'
 const MISSING_FILE = /\bENOENT\b/
 const WORDS_USAGE = [
   'usage: /typo-words                  list the words typofix never lists as typos',
@@ -120,13 +106,8 @@ const WORDS_USAGE = [
   '       /typo-words share <word…>    for everyone in this project',
   '       /typo-words remove <word…>   from both lists',
 ].join('\n')
-const REWRITE_LABELS = ['fixed', 'natural', 'short']
-const IDLE: Rephrase = { status: 'idle' }
 const NO_BACKEND =
   'no spell checker or dictionary found (Linux: install enchant-2 or hunspell and a dictionary such as en_US). /rephrase still works.'
-const SCRIPT_WARNING = 'typofix:'
-// Only the check requests: a guesses timeout still leaves a right issue list.
-const SPELL_SERVER_TIMEOUT = /NSSpellServer dataFromChecking\w* timed out/
 
 const issues = atom({ plugin: 'typofix', key: 'issues' } as const, [])
 const isHidden = atom({ plugin: 'typofix', key: 'isHidden' } as const, false)
@@ -136,61 +117,12 @@ const isOffering = atom(
 )
 const rephrase = atom({ plugin: 'typofix', key: 'rephrase' } as const, IDLE)
 
-const withLanguage = (language: string): string[] =>
-  language === '' ? [] : ['-d', language]
-
-const hunspellArgv = (language: string): string[] => [
-  'hunspell',
-  '-a',
-  '-i',
-  'utf-8',
-  ...withLanguage(language),
-]
-
-const parseIspellChecked = (stdout: string, text: string): Checked => ({
-  spans: parseIspell(stdout, text),
-})
-
-const extraBackend = (dictionary: string): Backend => ({
-  name: 'hunspell',
-  argv: () => hunspellArgv(dictionary),
-  input: toIspellInput,
-  parse: parseIspellChecked,
-})
-
 function candidateBackends(): readonly Backend[] {
   if (live.backend === undefined) {
     return BACKENDS
   }
   return live.backend === null ? [] : [live.backend]
 }
-
-const BACKENDS: readonly Backend[] = [
-  {
-    name: 'osascript',
-    argv: (root, language) => [
-      'osascript',
-      '-l',
-      'JavaScript',
-      `${root}/scripts/spell-macos.js`,
-      language,
-    ],
-    input: text => text,
-    parse: parseMacResult,
-  },
-  {
-    name: 'enchant-2',
-    argv: (_, language) => ['enchant-2', '-a', ...withLanguage(language)],
-    input: toIspellInput,
-    parse: parseIspellChecked,
-  },
-  {
-    name: 'hunspell',
-    argv: (_, language) => hunspellArgv(language),
-    input: toIspellInput,
-    parse: parseIspellChecked,
-  },
-]
 
 const live: Live = {
   language: '',
@@ -829,16 +761,6 @@ async function runRephrase(
   return { rewrites }
 }
 
-function rephraseLimits(source: string): RephraseLimits {
-  const seconds = Math.ceil(
-    (REPHRASE_MIN_TIMEOUT_MS + source.length * REPHRASE_MS_PER_CHAR) / 1000,
-  )
-  return {
-    maxTokens: REPHRASE_MAX_TOKENS,
-    timeoutMs: Math.min(REPHRASE_MAX_TIMEOUT_MS, seconds * 1000),
-  }
-}
-
 async function askHaiku(
   $: EngineInterface,
   source: string,
@@ -870,21 +792,6 @@ async function askHaiku(
   return reply
 }
 
-function failureOf(reply: ModelCompleteResult, limits: RephraseLimits): string {
-  const cutOff = `Haiku's reply was cut off at ${String(limits.maxTokens)} tokens (the draft may be too long)`
-  const isCutOff = reply.usage.output_tokens >= limits.maxTokens
-  if (reply.isAnswered) {
-    return isCutOff ? cutOff : 'Haiku did not answer with 3 rewrites'
-  }
-  if (reply.reason === 'api-error') {
-    return `Haiku failed (${reply.error})`
-  }
-  if (reply.reason === 'empty-reply') {
-    return isCutOff ? cutOff : 'Haiku sent an empty reply'
-  }
-  return `Haiku took longer than ${String(limits.timeoutMs / 1000)} s`
-}
-
 async function rephraseDraft($: EngineInterface): Promise<void> {
   const { text } = await $.prompt.read()
   if (text.trim() === '') {
@@ -905,15 +812,6 @@ function press($: EngineInterface, action: Promise<void>): void {
     $.ui.log(`typofix: a band key failed: ${String(error)}`, { to: 'debug' })
     $.ui.toast(`that did not work: ${reasonOf(error, $.plugin.name)}`)
   })
-}
-
-// Claude Code words a refused call as `<plugin>: $.<op>: <reason>`.
-function reasonOf(error: unknown, plugin: string): string {
-  const message = error instanceof Error ? error.message : String(error)
-  const rest = message.startsWith(`${plugin}: `)
-    ? message.slice(plugin.length + 2)
-    : message
-  return rest.replace(ENGINE_OP, '')
 }
 
 async function pickChoice(
@@ -1100,13 +998,6 @@ async function runWordsCommand(
   }
 }
 
-// A list file keeps only what its parser reads back, so an argument must read
-// back as itself: `#tag` would be a comment and `a#b` the word `a`.
-function isOneWord(word: string): boolean {
-  const parsed = listedWords(word)
-  return parsed.length === 1 && parsed[0] === writtenWord(word)
-}
-
 async function listWords($: EngineInterface): Promise<string> {
   const project = await projectWordsPath($)
   const legacy = await readLegacyWords($)
@@ -1142,16 +1033,6 @@ async function describeFile(
   } catch (error) {
     return `${name}: could not read ${path}: ${reasonOf(error, $.plugin.name)}`
   }
-}
-
-function describeList(
-  name: string,
-  path: string,
-  words: readonly string[],
-): string {
-  const count = `${String(words.length)} ${words.length === 1 ? 'word' : 'words'}`
-  const list = words.length > 0 ? `\n  ${words.join(', ')}` : ''
-  return `${name}: ${count} in ${path}${list}`
 }
 
 async function addCommand(
