@@ -15,16 +15,29 @@ in a second language.
   **natural** (how a native speaker would say it) and **short**. Pick one, and
   it replaces the draft.
 
-![typofix finds whaat and youu while a sentence is typed, offers happen right above the prompt for happpen, and Tab takes it](../../docs/media/typing.gif)
+![typofix finds whaat and youu while a sentence is typed, offers happen right above the prompt for happpen, and Tab takes it](https://github.com/lifebugz/typofix/raw/main/docs/media/typing.gif)
 
 ## Install
 
-typofix needs Claude Code 2.1.300 or later.
+typofix needs Claude Code 2.1.300 or later. Add one of its two marketplaces,
+then install it:
+
+```shell
+/plugin marketplace add lifebugz/typofix
+/plugin install typofix@typofix
+```
+
+Or from the lifebugz marketplace, which lists other plugins too:
 
 ```shell
 /plugin marketplace add lifebugz/cc-marketplace
 /plugin install typofix@lifebugz
 ```
+
+Install it from one marketplace only: when two enabled plugins have the same
+name, Claude Code loads the hooks module of only one of them. Each install keeps
+its own settings, so after a switch, set the spelling language again with
+`/plugin configure typofix@<marketplace>`.
 
 ## Use it
 
@@ -34,7 +47,7 @@ There are two ways to fix a word.
 typed the word, or when you move back to it with the arrow keys. The band steps
 aside and the fixes appear directly above the prompt. The word they fix is bold:
 
-![The suggestion row "happen, fixes happpen" sits right above the prompt, and happpen is bold and underlined](../../docs/media/fixes.png)
+![The suggestion row "happen, fixes happpen" sits right above the prompt, and happpen is bold and underlined](https://github.com/lifebugz/typofix/raw/main/docs/media/fixes.png)
 
 | Key   | What it does                                                         |
 | :---- | :------------------------------------------------------------------- |
@@ -45,14 +58,14 @@ aside and the fixes appear directly above the prompt. The word they fix is bold:
 **2. With the cursor anywhere: the band shortcut, then a letter.** The band
 lists up to 8 mistakes, and each of the first 22 fixes gets its own letter:
 
-![The band lists whaat with a: what, b: wheat and 1: ignore, and youu with c: you, d: your, e: yous and 2: ignore](../../docs/media/band.png)
+![The band lists whaat with a: what, b: wheat and 1: ignore, and youu with c: you, d: your, e: yous and 2: ignore](https://github.com/lifebugz/typofix/raw/main/docs/media/band.png)
 
 Press **ctrl+x tab** (or your own shortcut, below), then the letter. The word is
 fixed and you are back in the prompt, ready to type. The letters never use `i`,
 `r`, `s` or `x`, and never a digit: a row's digit (`1` to `8`) means "this word
 is not a typo" (see [Words that are not typos](#words-that-are-not-typos)).
 
-![ctrl+x tab then c turns youu into you; ctrl+x tab then a turns whaat into what, and the band goes away](../../docs/media/band.gif)
+![ctrl+x tab then c turns youu into you; ctrl+x tab then a turns whaat into what, and the band goes away](https://github.com/lifebugz/typofix/raw/main/docs/media/band.gif)
 
 In the band you can also press a row's digit to ignore that word from now on,
 in all your projects (the first row shows `1: ignore`). Press `r` to rephrase
@@ -64,7 +77,7 @@ on, you can click any fix instead.
 shortcut and then `r`. Haiku writes 3 versions, and a number puts one in the
 prompt box. For a draft with no mistakes, use `/rephrase` (below):
 
-![ctrl+x tab then r: Haiku rewrites "yesterday he go to the store and buyed three apple" three ways, and 2 puts the natural version in the prompt](../../docs/media/rephrase.gif)
+![ctrl+x tab then r: Haiku rewrites "yesterday he go to the store and buyed three apple" three ways, and 2 puts the natural version in the prompt](https://github.com/lifebugz/typofix/raw/main/docs/media/rephrase.gif)
 
 `/rephrase He go to the store yesterday` shows the 3 rewrites in the transcript
 and in the band. Press the band shortcut and then `1`, `2` or `3` (or click one)
@@ -102,11 +115,11 @@ A spell checker flags some words that are fine, such as names, `ok` or
 in them as a spelling mistake, whichever spell checker flagged it (macOS,
 hunspell or enchant-2). Grammar notes still show.
 
-| List    | File                                     | For                    | How a word gets in                              |
-| :------ | :--------------------------------------- | :--------------------- | :---------------------------------------------- |
-| Shipped | `words.txt` in the typofix folder        | everyone using typofix | a pull request to typofix                       |
-| Yours   | `~/.claude/typofix-words.txt`            | you, in every project  | a row's digit in the band, or `/typo-words add` |
-| Project | `.claude/typofix-words.txt` in a project | everyone in a project  | `/typo-words share`, then commit the file       |
+| List    | File                                     | For                    | How a word gets in                                         |
+| :------ | :--------------------------------------- | :--------------------- | :--------------------------------------------------------- |
+| Shipped | `words.txt` in the typofix folder        | everyone using typofix | a pull request that edits `packages/core/assets/words.txt` |
+| Yours   | `~/.claude/typofix-words.txt`            | you, in every project  | a row's digit in the band, or `/typo-words add`            |
+| Project | `.claude/typofix-words.txt` in a project | everyone in a project  | `/typo-words share`, then commit the file                  |
 
 `~/.claude` is your `CLAUDE_CONFIG_DIR` when you set one. The project list is in
 the session's project folder: where the session started, or where `/cd` or a
@@ -234,24 +247,27 @@ through your Claude Code session, as one model call on your account.
 
 ## Develop
 
-The mod uses the TypeScript, ESLint and Prettier setup at the repository root
-(see [`plugins/README.md`](../README.md#develop-a-mod)). From the root:
+typofix lives in [lifebugz/typofix](https://github.com/lifebugz/typofix). This
+folder is its Claude Code plugin. The logic every harness shares lives in
+`packages/core`, and `bun run core:sync` copies it here: into `hooks/core/`,
+`scripts/spell-macos.js` and `words.txt`. Edit it in `packages/core`, never in
+a copy. From the repository root:
 
 ```shell
 bun install
-bun run check                   # types, tsc, ESLint, Prettier, tests, validate
-bun run lint plugins/typofix    # ESLint on this mod only
-claude plugin test plugins/typofix
+bun run check                             # every check, as CI runs them
+bun run lint harnesses/claude-code        # ESLint on this plugin only
+claude plugin test harnesses/claude-code  # this plugin's tests
 ```
 
 `scripts/spell-macos.js` stays plain JavaScript, because macOS runs it with
-`osascript -l JavaScript`, which accepts no TypeScript syntax. It is still
-type-checked, as its own project (`scripts/tsconfig.json`), and every function
-in it carries JSDoc types. `osascript` calls the `run` function the script sets
-on `globalThis`.
+`osascript -l JavaScript`, which accepts no TypeScript syntax. Its source,
+`packages/core/assets/macos/spell-macos.js`, is still type-checked, as its own
+project, and every function in it carries JSDoc types. `osascript` calls the
+`run` function the script sets on `globalThis`.
 
-`scripts/jxa.d.ts` declares the macOS objects the script uses. In `osascript`,
-counts and positions arrive as strings (`"25"`), so the types say `string` and
-the script converts them with `Number()`.
+`packages/core/assets/macos/jxa.d.ts` declares the macOS objects the script
+uses. In `osascript`, counts and positions arrive as strings (`"25"`), so the
+types say `string` and the script converts them with `Number()`.
 
-Tested with Claude Code 2.1.310 on macOS.
+Tested with Claude Code 2.1.316 on macOS.

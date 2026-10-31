@@ -1,0 +1,64 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DISABLE_AUTOUPDATER: '1'
+
+jobs:
+  check:
+    name: bun run check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      # The Claude Code that wrote tooling/types/, so types:check compares like with like.
+      - name: Install Claude Code
+        run: |
+          version=$(sed -n '1s/^\/\/ Written by Claude Code \([0-9.]*\)\.$/\1/p' tooling/types/claude-code/index.d.ts)
+          curl -fsSL https://claude.ai/install.sh | bash -s "$version"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: claude --version
+      - run: bun run check
+
+  oldest:
+    name: Oldest supported Claude Code
+    runs-on: ubuntu-latest
+    env:
+      OLDEST: 2.1.300
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Claude Code ${{ env.OLDEST }}
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$OLDEST"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: claude --version
+      - run: claude plugin --help
+      # A subcommand or flag this version does not have yet is a gap in its
+      # tooling, not a typofix failure; any other failure is.
+      - name: Validate and test
+        run: |
+          failed=0
+          plugin() {
+            if out=$(claude plugin "$@" 2>&1); then
+              printf '%s\n' "$out"
+              return
+            fi
+            printf '%s\n' "$out"
+            case $out in
+              *"unknown command"* | *"unknown option"*)
+                echo "::warning::Claude Code $OLDEST cannot run 'claude plugin $*': a tooling gap, not a typofix failure."
+                ;;
+              *) failed=1 ;;
+            esac
+          }
+          plugin validate --strict harnesses/claude-code
+          plugin validate --strict .
+          plugin test harnesses/claude-code
+          exit $failed

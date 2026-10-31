@@ -1,10 +1,13 @@
 {
   "name": "typofix",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Checks the spelling and grammar of your prompt as you type, with 3 fixes for each mistake, and rewrites the whole draft with Haiku when you ask.",
   "author": {
     "name": "lifebugz"
   },
+  "homepage": "https://github.com/lifebugz/typofix",
+  "repository": "https://github.com/lifebugz/typofix",
+  "license": "MIT",
   "types": "./types/index.d.ts",
   "userConfig": {
     "language": {
