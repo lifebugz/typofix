@@ -105,14 +105,82 @@ typofix supports (2.1.300).
 
 ## Release
 
-1. Raise `version` in `harnesses/claude-code/.claude-plugin/plugin.json`. With
-   the same version, `claude plugin update` says typofix is already at the
-   latest version, and users keep the old copy.
-2. Push to `main` and wait for CI to pass. Users of the `typofix` marketplace
-   get the new version at their next plugin update.
-3. Open a pull request on
-   [lifebugz/cc-marketplace](https://github.com/lifebugz/cc-marketplace) that
-   moves the `sha` of its `typofix` entry to the commit you pushed.
+A release is a new `version` in a plugin's `plugin.json`; there are no git tags
+or GitHub Releases. Today only the Claude Code plugin has releases; each new
+harness adds its own part below.
+
+### Claude Code
+
+typofix reaches Claude Code users through two marketplaces, and each one sees a
+release in its own way.
+
+**Today:** [lifebugz/cc-marketplace#8](https://github.com/lifebugz/cc-marketplace/pull/8)
+moves the `typofix@lifebugz` entry to this repository, and it has not merged
+yet. Until it does, that entry installs the 0.2.0 copy kept in cc-marketplace
+itself: nothing in this repository reaches it, and step 5 below has nothing to
+change. Everything below about `typofix@lifebugz` describes the entry after #8.
+
+| Plugin id                     | Marketplace, where its entry is                                                                          | The entry installs                                                | An installed copy can update, at the user's next `claude plugin update`, once |
+| :---------------------------- | :------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| `typofix@typofix`             | lifebugz/typofix (this repository), `.claude-plugin/marketplace.json`                                    | `harnesses/claude-code` as it is on `main`                        | `version` changes on `main`                                                   |
+| `typofix@lifebugz` (after #8) | [lifebugz/cc-marketplace](https://github.com/lifebugz/cc-marketplace), `.claude-plugin/marketplace.json` | `harnesses/claude-code` at the one commit the entry's `sha` names | the `sha` moves to a commit with a new `version`                              |
+
+Three rules decide what users get:
+
+- **The version.** An installed copy updates only when the plugin's version
+  changes, and `version` in `harnesses/claude-code/.claude-plugin/plugin.json`
+  sets it. Auto-update is off by default for both marketplaces, so users get a
+  new version when they run `claude plugin update typofix@typofix` (or
+  `typofix@lifebugz`), which refreshes the marketplace first, unless they
+  turned auto-update on. When the version is the same, that command says so,
+  for example `typofix is already at the latest version (0.2.1).`
+- **New installs.** `claude plugin install typofix@typofix` refreshes the
+  marketplace first and copies `harnesses/claude-code` from `main` as it is at
+  that moment, under whatever version it names. So a merge that keeps the
+  version still reaches new users, and two copies that both say 0.2.1 can
+  differ. Raise the version whenever the plugin folder changes.
+- **The pinned commit.** Claude Code installs exactly the commit that the
+  cc-marketplace entry's `sha` names. A change here reaches `typofix@lifebugz`
+  users only once that `sha` moves to a commit that contains it: new installs
+  then get that commit, and existing installs update if its `version` is new.
+
+A change needs a release when it changes a file under `harnesses/claude-code/`.
+That includes `packages/core/src`, `packages/core/assets/words.txt` and
+`packages/core/assets/macos/spell-macos.js`, because `bun run core:sync` copies
+them into that folder. A change to `tooling/`, core's tests or this README
+needs none. An edit to this repository's `.claude-plugin/marketplace.json`, such
+as a new description, needs none either: it reaches `typofix@typofix` users
+the next time their copy of the marketplace refreshes, for example at their
+next `claude plugin update typofix@typofix`.
+
+To release 0.2.2:
+
+1. Make the change on a branch. If `packages/core` changed, run
+   `bun run core:sync`.
+2. In `harnesses/claude-code/.claude-plugin/plugin.json`, raise `version` from
+   `0.2.1` to `0.2.2`.
+3. Run `bun run check`, push the branch, and open a pull request. CI publishes
+   nothing, and `main` has no rule that blocks a merge when CI fails, so merge
+   only after CI passes. The merge into `main` is the release: from then on,
+   `typofix@typofix` users get 0.2.2 at their next `claude plugin update`.
+4. Find the commit your merge created on `main` (the pull request page shows
+   it). CI runs again on that push to `main`; check that it passed. If nothing
+   was merged after yours, `git fetch origin` and then
+   `git rev-parse origin/main` print its full id. The `sha` field takes only
+   the full 40 characters.
+5. On lifebugz/cc-marketplace, open a pull request that sets the `typofix`
+   entry's `sha` to that id. When a maintainer of that repository merges it,
+   `typofix@lifebugz` users get 0.2.2 at their next `claude plugin update`.
+
+What each step reaches, for users who already have 0.2.1:
+
+| You did                                      | `typofix@typofix`                           | `typofix@lifebugz` (after #8)    |
+| :------------------------------------------- | :------------------------------------------ | :------------------------------- |
+| Merged a change and kept `version` at 0.2.1  | stay on 0.2.1 (new installs get the change) | stay on 0.2.1 (new installs too) |
+| Merged the change with `version` 0.2.2 (1-3) | 0.2.2                                       | stay on 0.2.1                    |
+| Then merged the `sha` pull request (4-5)     | 0.2.2                                       | 0.2.2                            |
+
+`claude plugin list` shows the version each install has.
 
 ## License
 
