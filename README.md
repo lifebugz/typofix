@@ -114,16 +114,10 @@ harness adds its own part below.
 typofix reaches Claude Code users through two marketplaces, and each one sees a
 release in its own way.
 
-**Today:** [lifebugz/cc-marketplace#8](https://github.com/lifebugz/cc-marketplace/pull/8)
-moves the `typofix@lifebugz` entry to this repository, and it has not merged
-yet. Until it does, that entry installs the 0.2.0 copy kept in cc-marketplace
-itself: nothing in this repository reaches it, and step 5 below has nothing to
-change. Everything below about `typofix@lifebugz` describes the entry after #8.
-
-| Plugin id                     | Marketplace, where its entry is                                                                          | The entry installs                                                | An installed copy can update, at the user's next `claude plugin update`, once |
-| :---------------------------- | :------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------- | :---------------------------------------------------------------------------- |
-| `typofix@typofix`             | lifebugz/typofix (this repository), `.claude-plugin/marketplace.json`                                    | `harnesses/claude-code` as it is on `main`                        | `version` changes on `main`                                                   |
-| `typofix@lifebugz` (after #8) | [lifebugz/cc-marketplace](https://github.com/lifebugz/cc-marketplace), `.claude-plugin/marketplace.json` | `harnesses/claude-code` at the one commit the entry's `sha` names | the `sha` moves to a commit with a new `version`                              |
+| Plugin id          | Marketplace, where its entry is                                                                          | The entry installs                                                | An installed copy can update, at the user's next `claude plugin update`, once |
+| :----------------- | :------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------- | :---------------------------------------------------------------------------- |
+| `typofix@typofix`  | lifebugz/typofix (this repository), `.claude-plugin/marketplace.json`                                    | `harnesses/claude-code` as it is on `main`                        | `version` changes on `main`                                                   |
+| `typofix@lifebugz` | [lifebugz/cc-marketplace](https://github.com/lifebugz/cc-marketplace), `.claude-plugin/marketplace.json` | `harnesses/claude-code` at the one commit the entry's `sha` names | the `sha` moves to a commit with a new `version`                              |
 
 Three rules decide what users get:
 
@@ -174,7 +168,7 @@ To release 0.2.2:
 
 What each step reaches, for users who already have 0.2.1:
 
-| You did                                      | `typofix@typofix`                           | `typofix@lifebugz` (after #8)    |
+| You did                                      | `typofix@typofix`                           | `typofix@lifebugz`               |
 | :------------------------------------------- | :------------------------------------------ | :------------------------------- |
 | Merged a change and kept `version` at 0.2.1  | stay on 0.2.1 (new installs get the change) | stay on 0.2.1 (new installs too) |
 | Merged the change with `version` 0.2.2 (1-3) | 0.2.2                                       | stay on 0.2.1                    |
