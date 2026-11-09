@@ -1628,10 +1628,6 @@ describe('marking the word', () => {
 describe('shell mode', () => {
   const NORMAL = '? for shortcuts'
   const SHELL_HINTS = [SHELL, `-- INSERT -- ${SHELL}`, `${SHELL}   `] as const
-  const heloUntilFixed: Process = (argv, stdin) =>
-    stdin.includes('helo')
-      ? macFinds({ word: 'helo', choices: ['hello'] })(argv, stdin)
-      : macFinds()(argv, stdin)
   const twoTypos = (): Process =>
     macFinds(
       { word: 'helo', choices: ['hello'] },
@@ -1647,44 +1643,63 @@ describe('shell mode', () => {
   }
 
   test('with no hint drawn, a shell command is marked and cleared by paints only, so the box stays in shell mode', async ($, on) => {
-    const world = setup(on, heloUntilFixed, 'echo helo world')
+    let macChecks = 0
+    const heloOnce: Process = (argv, stdin) => {
+      if (argv[0] === 'osascript') {
+        macChecks += 1
+      }
+      return macChecks > 1
+        ? macFinds()(argv, stdin)
+        : macFinds({ word: 'helo', choices: ['hello'] })(argv, stdin)
+    }
+    const world = setup(on, heloOnce, 'echo helo world')
     world.inputMode = 'shell'
     world.cursor = 0
     await startAndCheck($, world)
-    expect(world.repaints).toEqual([
-      [{ start: 5, end: 9, underline: true, color: 'error' }],
-    ])
-
-    await typeAt($, 'echo helo world', 8, 'l')
+    await typeAt($, 'echo helo world', 15, ' now')
     await world.clock.advance(400)
-    expect(world.repaints.at(-1)).toEqual([])
+
+    const helo = { start: 5, end: 9, underline: true, color: 'error' }
+    expect(world.repaints).toEqual([[helo], [helo], []])
     expect(world.filled).toEqual([])
     expect(world.inputMode).toBe('shell')
   })
 
-  test('with no hint drawn, an ignore keeps shell mode and a band fix ends it', async ($, on) => {
-    const world = setup(on, twoTypos(), 'echo helo wrold')
+  test('with no hint drawn, an ignore keeps shell mode, and a band fix ends it and paints the typo it left', async ($, on) => {
+    const world = setup(
+      on,
+      macFinds(
+        { word: 'helo', choices: ['hello'] },
+        { word: 'wrold', choices: ['world'] },
+        { word: 'nwo', choices: ['now'] },
+      ),
+      'echo helo wrold nwo',
+    )
     world.inputMode = 'shell'
     world.cursor = 0
     await startAndCheck($, world)
     const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    const nwo = { start: 16, end: 19, underline: true, color: 'error' }
 
     await band.press({ key: 'ignore-1' })
     expect(world.inputMode).toBe('shell')
     expect(world.repaints.at(-1)).toEqual([
       { start: 10, end: 15, underline: true, color: 'error' },
+      nwo,
     ])
 
     await band.press({ key: 'fix-1-1' })
-    expect(world.filled).toEqual(['echo helo world'])
+    expect(world.filled).toEqual(['echo helo world nwo'])
     expect(world.fillMarks).toEqual([[]])
+    expect(world.repaints.at(-1)).toEqual([nwo])
     expect(world.inputMode).toBe('prompt')
   })
 
   for (const hint of SHELL_HINTS) {
-    test(`under the hint ${JSON.stringify(hint)} nothing is checked or listed, and a normal hint checks again`, async ($, on) => {
+    test(`under the hint ${JSON.stringify(hint)} nothing is checked, listed or marked, and a normal hint checks again`, async ($, on) => {
       const world = setup(on, twoTypos(), 'git stauts helo wrold')
       world.cursor = 0
+      world.inputMode = 'shell'
       await start($)
       const line = await $.ui.mount(hintLine(hint))
       await world.clock.advance(400)
@@ -1697,31 +1712,41 @@ describe('shell mode', () => {
         await band.find({ type: 'Text', text: 'drawn by Claude Code' }),
       ).toBeDefined()
 
+      world.inputMode = 'prompt'
       await line.redraw({ hint: NORMAL, isDraft: true, isWorking: false })
       await world.clock.advance(400)
       expect(world.programs).toContain('osascript')
       expect(await band.find({ key: 'fix-1-1' })).toMatchObject({
         text: 'hello',
       })
+      expect(world.repaints.at(-1)).toHaveLength(2)
+
+      world.inputMode = 'shell'
+      await line.redraw({ hint, isDraft: true, isWorking: false })
+      expect(await band.find({ key: 'fix-1-1' })).toBeUndefined()
+      const checks = world.programs.length
+      await world.clock.advance(400)
+      expect(world.programs).toHaveLength(checks)
+      expect(world.repaints.at(-1)).toEqual([])
+      expect(world.filled).toEqual([])
+      expect(world.inputMode).toBe('shell')
     })
   }
 
-  test('the shell hint takes the band away at once and the marks with the next check', async ($, on) => {
+  test('a check still running when shell mode starts marks nothing', async ($, on) => {
     const world = setup(on, twoTypos(), 'fix helo now wrold')
     world.cursor = 0
-    await startAndCheck($, world)
-    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-    expect(await band.find({ key: 'fix-1-1' })).toBeDefined()
-
+    await start($)
+    const hold = holdCall()
+    world.processHold = hold
+    const checked = world.clock.advance(400)
+    await hold.reached
     world.inputMode = 'shell'
     await $.ui.mount(hintLine(SHELL))
-    expect(await band.find({ key: 'fix-1-1' })).toBeUndefined()
-    const checks = world.programs.length
-    await world.clock.advance(400)
-    expect(world.programs).toHaveLength(checks)
-    expect(world.repaints.at(-1)).toEqual([])
-    expect(world.filled).toEqual([])
-    expect(world.inputMode).toBe('shell')
+    hold.release()
+    await checked
+
+    expect(world.repaints).toEqual([])
   })
 
   test("the band hides /rephrase's rewrites in shell mode and shows them again after it", async ($, on) => {

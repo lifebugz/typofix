@@ -81,7 +81,7 @@ interface Live {
   spans: readonly Span[]
   isOffering: boolean
   isShell: boolean
-  canPaint: boolean | undefined
+  hasPaint: boolean | undefined
   hiddenFor: string | undefined
   checkTimer: Timer | undefined
   backend: Backend | null | undefined
@@ -143,7 +143,7 @@ const live: Live = {
   spans: [],
   isOffering: false,
   isShell: false,
-  canPaint: undefined,
+  hasPaint: undefined,
   hiddenFor: undefined,
   checkTimer: undefined,
   backend: undefined,
@@ -199,10 +199,6 @@ async function resetState($: EngineInterface): Promise<void> {
   await update($, isHidden, () => false)
   await update($, isOffering, () => false)
   await update($, rephrase, () => IDLE)
-}
-
-function offeredAt(text: string, cursor: number): Span | undefined {
-  return offeredAtCursor(live.spans, text, cursor)
 }
 
 async function setOffering($: EngineInterface, offer: boolean): Promise<void> {
@@ -302,7 +298,7 @@ async function runSpellCheck(
   const fresh = found.sort((a, b) => a.start - b.start)
 
   const again = await $.prompt.read()
-  if (again.text !== text) {
+  if (again.text !== text || live.isShell) {
     return
   }
   const hadSpans = live.spans.length > 0
@@ -338,49 +334,53 @@ async function paintNow(
   if (box.text !== text || live.draftText !== text) {
     return
   }
-  const offered = offeredAt(text, box.cursor)
-  await setOffering($, offered !== undefined)
-  await paintMarks($, text, live.spans, offered)
+  await markDraft($, text, live.spans, box.cursor)
 }
 
 // Never mark through a fill: a replace fill turns shell mode off, and a paint
 // cannot clear a fill's marks.
-async function paintMarks(
+async function markDraft(
   $: EngineInterface,
   text: string,
   spans: readonly Span[],
-  offered: Span | undefined,
+  cursor: number,
 ): Promise<void> {
-  if (live.canPaint === false) {
-    return
+  const offered = offeredAtCursor(spans, text, cursor)
+  if (!isPanel() && live.hasPaint !== false) {
+    try {
+      await $.prompt.paint({
+        text,
+        decorations: decorationsFor(spans, offered),
+      })
+    } catch (error) {
+      $.ui.log(`typofix: could not mark the draft: ${String(error)}`, {
+        to: 'debug',
+      })
+    }
   }
-  try {
-    await $.prompt.paint({ text, decorations: decorationsFor(spans, offered) })
-  } catch (error) {
-    $.ui.log(`typofix: could not mark the draft: ${String(error)}`, {
-      to: 'debug',
-    })
-  }
+  await setOffering($, offered !== undefined)
 }
 
 // Claude Code words a hook's refusal of a call it has as
 // `<plugin>: $.prompt.paint: …`; any other rejection means it has no paint.
 async function probePaint($: EngineInterface): Promise<void> {
-  if (live.canPaint !== undefined) {
+  if (live.hasPaint !== undefined) {
     return
   }
   try {
     await $.prompt.paint({ decorations: [] })
-    live.canPaint = true
   } catch (error) {
-    live.canPaint = isRefusal(error, $.plugin.name)
-    $.ui.log(`typofix: the paint check failed: ${String(error)}`, {
+    if (!isRefusal(error, $.plugin.name)) {
+      live.hasPaint = false
+      $.ui.log(`typofix: no $.prompt.paint: ${String(error)}`, { to: 'debug' })
+      $.ui.toast(NO_PAINT, { timeoutMs: 8000 })
+      return
+    }
+    $.ui.log(`typofix: a hook refused the paint check: ${String(error)}`, {
       to: 'debug',
     })
-    if (!live.canPaint) {
-      $.ui.toast(NO_PAINT, { timeoutMs: 8000 })
-    }
   }
+  live.hasPaint = true
 }
 
 async function showIssues(
@@ -853,11 +853,7 @@ async function pickChoice(
   live.draftText = plan.text
   live.checkedText = plan.text
   await writeIssues($, plan.spans)
-  const offered = offeredAtCursor(plan.spans, plan.text, filled.cursor)
-  if (!isPanel()) {
-    await paintMarks($, plan.text, plan.spans, offered)
-  }
-  await setOffering($, offered !== undefined)
+  await markDraft($, plan.text, plan.spans, filled.cursor)
   scheduleCheck($, plan.text)
 }
 
@@ -902,14 +898,12 @@ async function ignoreWord($: EngineInterface, word: string): Promise<void> {
   if (rest.length === live.spans.length) {
     return
   }
-  const offered = offeredAtCursor(rest, text, cursor)
   live.spans = rest
   if (isPanel()) {
     await writeIssues($, live.spans)
     return
   }
-  await paintMarks($, text, rest, offered)
-  await setOffering($, offered !== undefined)
+  await markDraft($, text, rest, cursor)
   await writeIssues($, live.spans)
 }
 
@@ -1137,9 +1131,7 @@ export const register: Register = (on, options) => {
     if (edited.text !== e.text) {
       await onDraftChange($, e, edited.text)
     }
-    const offered = offeredAt(edited.text, edited.cursor)
-    await setOffering($, offered !== undefined)
-    await paintMarks($, edited.text, live.spans, offered)
+    await markDraft($, edited.text, live.spans, edited.cursor)
     return edited
   })
 
@@ -1209,7 +1201,7 @@ export const register: Register = (on, options) => {
   }))
 
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
-    // Read back from the drawn row, so the hint can end in blank cells.
+    // The engine reads the hint back from the drawn row, so it can end in spaces.
     const isShell = e.props.hint.trimEnd().endsWith(SHELL_HINT)
     if (setShellMode($, isShell)) {
       scheduleCheck($, undefined)
@@ -1217,8 +1209,8 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // A rewrite picked in shell mode would replace the draft and end the mode.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    // A fix or rewrite picked here would replace the draft and end shell mode.
     if (e.props.hasSurvey || live.isShell) {
       return next(e)
     }
