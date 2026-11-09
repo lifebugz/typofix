@@ -5,12 +5,12 @@ while you type, and offers fixes. It is made for people who write their prompts
 in a second language.
 
 - **Live check.** When you stop typing for 0.4 seconds, the mod checks the draft
-  with your computer's spell checker. Each mistake gets an underline (your
+  with your computer's spell checker. Each typo gets an underline (your
   theme's error color for spelling, its warning color for grammar). A band above
-  the prompt lists the mistakes with their fixes; with no mistakes it shows
+  the prompt lists the typos with their fixes; with no typos it shows
   nothing. It never blocks Enter.
 - **Rephrase with Haiku, only when you ask.** Press `r` in the band while it
-  lists mistakes, or run `/rephrase <text>` for any text. Haiku writes 3
+  lists typos, or run `/rephrase <text>` for any text. Haiku writes 3
   versions of the whole draft: **fixed** (only spelling and grammar),
   **natural** (how a native speaker would say it) and **short**. Pick one, and
   it replaces the draft.
@@ -19,7 +19,7 @@ in a second language.
 
 ## Install
 
-typofix needs Claude Code 2.1.300 or later. Add one of its two marketplaces,
+typofix needs Claude Code 2.1.316 or later. Add one of its two marketplaces,
 then install it:
 
 ```shell
@@ -56,7 +56,7 @@ aside and the fixes appear directly above the prompt. The word they fix is bold:
 | Enter | With no fix highlighted, send the prompt as it is; else use that fix |
 
 **2. With the cursor anywhere: the band shortcut, then a letter.** The band
-lists up to 8 mistakes, and each of the first 22 fixes gets its own letter:
+lists up to 8 typos, and each of the first 22 fixes gets its own letter:
 
 ![The band lists whaat with a: what, b: wheat and 1: ignore, and youu with c: you, d: your, e: yous and 2: ignore](https://github.com/lifebugz/typofix/raw/main/docs/media/band.png)
 
@@ -73,9 +73,9 @@ the draft with Haiku, `x` to hide the band until a check finds something new,
 and Esc to go back to the prompt. With [fullscreen rendering](https://code.claude.com/docs/en/fullscreen)
 on, you can click any fix instead.
 
-**Rephrase the whole draft.** While the band lists mistakes, press the band
+**Rephrase the whole draft.** While the band lists typos, press the band
 shortcut and then `r`. Haiku writes 3 versions, and a number puts one in the
-prompt box. For a draft with no mistakes, use `/rephrase` (below):
+prompt box. For a draft with no typos, use `/rephrase` (below):
 
 ![ctrl+x tab then r: Haiku rewrites "yesterday he go to the store and buyed three apple" three ways, and 2 puts the natural version in the prompt](https://github.com/lifebugz/typofix/raw/main/docs/media/rephrase.gif)
 
@@ -112,7 +112,7 @@ Sources first: macOS can use Ctrl+Space to switch the keyboard language.
 
 A spell checker flags some words that are fine, such as names, `ok` or
 `frontmatter`. typofix keeps three lists of such words. It never lists a word
-in them as a spelling mistake, whichever spell checker flagged it (macOS,
+in them as a typo, whichever spell checker flagged it (macOS,
 hunspell or enchant-2). Grammar notes still show.
 
 | List    | File                                     | For                    | How a word gets in                                         |
@@ -217,19 +217,20 @@ terminal. Tested with the VS Code extension 2.1.306.
 
 ## Limits
 
-- A mistake is underlined as soon as the check finds it while the cursor is at
-  the end of the draft, and an underline the check no longer finds goes away at
-  once too. The word whose fixes are showing is also bold. With the cursor
-  inside the draft, both wait for your next key press (an arrow key is enough),
-  because changing the marks at once would move the cursor.
+- A typo is underlined as soon as the check finds it, wherever the cursor is,
+  and an underline the check no longer finds goes away at once too. The word
+  whose fixes are showing is also bold. Marking never moves the cursor or
+  changes the draft.
 - Claude Code decides where the suggestion list is drawn. The band steps aside so
   the fixes sit next to the prompt; it comes back when the cursor moves on.
 - A fix taken with Tab keeps the cursor where it is. In the terminal and the
-  desktop app, a fix or an ignore from the band replaces the whole draft, so the
-  cursor moves to the end.
-- Marking the draft at once replaces it, so a key or paste that lands in that
-  same moment is undone; typofix then puts it back. It does this once, so a
-  second key in the moment of the put-back can still be lost.
+  desktop app, only a fix or a rewrite from the band replaces the whole draft,
+  so the cursor moves to the end; an ignore leaves the draft alone.
+- In the terminal, typofix checks nothing in shell mode (`!`), like Claude
+  Code's own spell check; it tells by the `! for shell mode` hint under the box.
+  Where that hint isn't shown (the desktop app, or when another mod changes it),
+  it checks shell commands too, and a fix or a rewrite picked from the band
+  turns the command into a normal prompt: press Home, type `!`, press End.
 - The live check runs a program on your computer, so it needs a local Claude Code:
   the terminal, the desktop app's local Code tab, or the VS Code extension.
 - Grammar checks are best effort. The macOS grammar model does not flag the same
@@ -270,4 +271,4 @@ project, and every function in it carries JSDoc types. `osascript` calls the
 uses. In `osascript`, counts and positions arrive as strings (`"25"`), so the
 types say `string` and the script converts them with `Number()`.
 
-Tested with Claude Code 2.1.316 on macOS.
+Tested with Claude Code 2.1.319 on macOS.

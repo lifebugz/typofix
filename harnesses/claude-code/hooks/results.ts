@@ -30,3 +30,11 @@ export function reasonOf(error: unknown, plugin: string): string {
     : message
   return rest.replace(ENGINE_OP, '')
 }
+
+export function isRefusal(error: unknown, plugin: string): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const prefix = `${plugin}: `
+  return (
+    message.startsWith(prefix) && ENGINE_OP.test(message.slice(prefix.length))
+  )
+}

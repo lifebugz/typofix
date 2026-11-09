@@ -68,7 +68,7 @@ import {
 } from './core/index'
 import { focusShortcut } from './keybindings'
 import { decorationsFor, fixLetter, typeaheadRows } from './render'
-import { failureOf, reasonOf } from './results'
+import { failureOf, isRefusal, reasonOf } from './results'
 
 type RephraseFrom = 'band' | 'command'
 
@@ -77,11 +77,11 @@ interface Live {
   shortcut: string
   hunspell: string | undefined
   draftText: string
-  edits: number
-  edited: string
   checkedText: string | undefined
   spans: readonly Span[]
   isOffering: boolean
+  isShell: boolean
+  canPaint: boolean | undefined
   hiddenFor: string | undefined
   checkTimer: Timer | undefined
   backend: Backend | null | undefined
@@ -121,6 +121,10 @@ const WORDS_USAGE = [
 ].join('\n')
 const NO_BACKEND =
   'no spell checker or dictionary found (Linux: install enchant-2 or hunspell and a dictionary such as en_US). /rephrase still works.'
+const NO_PAINT =
+  'typofix needs Claude Code 2.1.316 or later for underlines; the band still works.'
+// The hint line under the box in shell mode; vim mode puts `-- INSERT -- ` first.
+const SHELL_HINT = '! for shell mode'
 
 const issues = atom({ plugin: 'typofix', key: 'issues' } as const, [])
 const isHidden = atom({ plugin: 'typofix', key: 'isHidden' } as const, false)
@@ -135,11 +139,11 @@ const live: Live = {
   shortcut: focusShortcut(undefined),
   hunspell: undefined,
   draftText: '',
-  edits: 0,
-  edited: '',
   checkedText: undefined,
   spans: [],
   isOffering: false,
+  isShell: false,
+  canPaint: undefined,
   hiddenFor: undefined,
   checkTimer: undefined,
   backend: undefined,
@@ -172,12 +176,15 @@ function forgetDraft(): void {
   live.hiddenFor = undefined
 }
 
-// Counts what anyone but typofix's own repaints put in the box. The box change
-// of a repaint comes back through prompt.autocomplete, so live.draftText
-// cannot tell an edit the repaint undid.
-function noteEdit(text: string): void {
-  live.edits += 1
-  live.edited = text
+// The band drawn in shell mode reads no atom, so only a redraw brings it back.
+function setShellMode($: EngineInterface, isShell: boolean): boolean {
+  if (isShell === live.isShell) {
+    return false
+  }
+  live.isShell = isShell
+  $.ui.log(`typofix: shell mode ${isShell ? 'on' : 'off'}`, { to: 'debug' })
+  $.ui.invalidate('ui.render')
+  return true
 }
 
 // Claude Code can raise a submit at a turn's end, while the box holds the next draft.
@@ -239,7 +246,7 @@ async function onDraftChange(
 ): Promise<void> {
   const before = live.spans
   live.draftText = text
-  live.spans = text.startsWith('/') ? [] : shiftSpans(before, edit, text)
+  live.spans = isUnchecked(text) ? [] : shiftSpans(before, edit, text)
   scheduleCheck($, text)
   if (live.spans.length !== before.length) {
     await writeIssues($, live.spans)
@@ -282,11 +289,8 @@ async function runSpellCheck(
     live.spans = respan(live.spans, live.draftText, text)
     live.draftText = text
   }
-  if (text.trim() === '' || text.startsWith('/')) {
-    if (live.spans.length > 0) {
-      await writeIssues($, [])
-    }
-    live.checkedText = text
+  if (text.trim() === '' || isUnchecked(text)) {
+    await clearChecked($, text)
     return
   }
 
@@ -304,7 +308,19 @@ async function runSpellCheck(
   const hadSpans = live.spans.length > 0
   await showIssues($, fresh)
   live.checkedText = text
-  await setOffering($, offeredAt(text, again.cursor) !== undefined)
+  await paintNow($, text, hadSpans)
+}
+
+function isUnchecked(text: string): boolean {
+  return text.startsWith('/') || live.isShell
+}
+
+async function clearChecked($: EngineInterface, text: string): Promise<void> {
+  const hadSpans = live.spans.length > 0
+  if (hadSpans) {
+    await writeIssues($, [])
+  }
+  live.checkedText = text
   await paintNow($, text, hadSpans)
 }
 
@@ -313,58 +329,58 @@ async function paintNow(
   text: string,
   hadSpans: boolean,
 ): Promise<void> {
-  // The panel drops decorations, and a fill would move its caret.
+  // The panel drops decorations.
   if ((live.spans.length === 0 && !hadSpans) || isPanel()) {
+    await setOffering($, false)
     return
   }
   const box = await $.prompt.read()
-  if (box.text !== text || box.cursor !== text.length) {
+  if (box.text !== text || live.draftText !== text) {
     return
   }
-  const edits = live.edits
-  const filled = await $.prompt.fill({
-    text,
-    mode: 'replace',
-    decorations: decorationsFor(live.spans, offeredAt(text, text.length)),
-  })
-  if (filled.isFilled) {
-    await restoreOvertaken($, text, edits)
+  const offered = offeredAt(text, box.cursor)
+  await setOffering($, offered !== undefined)
+  await paintMarks($, text, live.spans, offered)
+}
+
+// Never mark through a fill: a replace fill turns shell mode off, and a paint
+// cannot clear a fill's marks.
+async function paintMarks(
+  $: EngineInterface,
+  text: string,
+  spans: readonly Span[],
+  offered: Span | undefined,
+): Promise<void> {
+  if (live.canPaint === false) {
+    return
+  }
+  try {
+    await $.prompt.paint({ text, decorations: decorationsFor(spans, offered) })
+  } catch (error) {
+    $.ui.log(`typofix: could not mark the draft: ${String(error)}`, {
+      to: 'debug',
+    })
   }
 }
 
-// A fill lands after the edits made while it was on its way, so it can undo
-// a key or a paste. Put the last one back once; a second miss stays lost. An
-// empty edit is a sent prompt: filling it would wipe the text a dropped prompt
-// puts back.
-async function restoreOvertaken(
-  $: EngineInterface,
-  filledText: string,
-  editsBefore: number,
-): Promise<boolean> {
-  const draft = live.edited
-  const edits = live.edits
-  if (edits === editsBefore || draft === '' || draft === filledText) {
-    return false
+// Claude Code words a hook's refusal of a call it has as
+// `<plugin>: $.prompt.paint: …`; any other rejection means it has no paint.
+async function probePaint($: EngineInterface): Promise<void> {
+  if (live.canPaint !== undefined) {
+    return
   }
-  const box = await $.prompt.read()
-  if (
-    live.edits !== edits ||
-    box.text !== filledText ||
-    box.cursor !== filledText.length
-  ) {
-    return false
+  try {
+    await $.prompt.paint({ decorations: [] })
+    live.canPaint = true
+  } catch (error) {
+    live.canPaint = isRefusal(error, $.plugin.name)
+    $.ui.log(`typofix: the paint check failed: ${String(error)}`, {
+      to: 'debug',
+    })
+    if (!live.canPaint) {
+      $.ui.toast(NO_PAINT, { timeoutMs: 8000 })
+    }
   }
-  const spans = respan(live.spans, live.draftText, draft)
-  const offered = offeredAtCursor(spans, draft, draft.length)
-  const filled = await $.prompt.fill({
-    text: draft,
-    mode: 'replace',
-    decorations: decorationsFor(spans, offered),
-  })
-  if (filled.isFilled) {
-    await setOffering($, offered !== undefined)
-  }
-  return filled.isFilled
 }
 
 async function showIssues(
@@ -825,11 +841,7 @@ async function pickChoice(
     return
   }
 
-  const filled = await $.prompt.fill({
-    text: plan.text,
-    mode: 'replace',
-    decorations: decorationsFor(plan.spans),
-  })
+  const filled = await $.prompt.fill({ text: plan.text, mode: 'replace' })
   if (!filled.isFilled) {
     $.ui.toast('the prompt box did not take the fix')
     return
@@ -838,11 +850,14 @@ async function pickChoice(
   if (live.draftText !== text && live.draftText !== plan.text) {
     return
   }
-  noteEdit(plan.text)
   live.draftText = plan.text
   live.checkedText = plan.text
   await writeIssues($, plan.spans)
-  await setOffering($, false)
+  const offered = offeredAtCursor(plan.spans, plan.text, filled.cursor)
+  if (!isPanel()) {
+    await paintMarks($, plan.text, plan.spans, offered)
+  }
+  await setOffering($, offered !== undefined)
   scheduleCheck($, plan.text)
 }
 
@@ -863,7 +878,6 @@ async function pickRewrite($: EngineInterface, rewrite: string): Promise<void> {
   if (live.draftText !== before && live.draftText !== rewrite) {
     return
   }
-  noteEdit(rewrite)
   live.draftText = rewrite
   await setRephrase($, IDLE)
   await writeIssues($, [])
@@ -882,34 +896,20 @@ async function readShortcut($: EngineInterface): Promise<void> {
 
 async function ignoreWord($: EngineInterface, word: string): Promise<void> {
   await addWords($, await userWordsPath($), USER_WORDS_HEADER, [word])
-  const { text } = await $.prompt.read()
+  const { text, cursor } = await $.prompt.read()
   await syncDraft($, text)
   const rest = withoutWord(live.spans, word)
   if (rest.length === live.spans.length) {
     return
   }
-  const offered = offeredAtCursor(rest, text, text.length)
+  const offered = offeredAtCursor(rest, text, cursor)
   live.spans = rest
   if (isPanel()) {
     await writeIssues($, live.spans)
     return
   }
-  // A key typed since the read would be lost to the fill; its prompt.edit
-  // paints the spans instead.
-  const box = await $.prompt.read()
-  const edits = live.edits
-  const isFilled =
-    box.text === text &&
-    (
-      await $.prompt.fill({
-        text,
-        mode: 'replace',
-        decorations: decorationsFor(rest, offered),
-      })
-    ).isFilled
-  if (isFilled && !(await restoreOvertaken($, text, edits))) {
-    await setOffering($, offered !== undefined)
-  }
+  await paintMarks($, text, rest, offered)
+  await setOffering($, offered !== undefined)
   await writeIssues($, live.spans)
 }
 
@@ -1076,6 +1076,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     forgetDraft()
+    setShellMode($, false)
     live.shippedKeys = undefined
     await resetState($)
     await readShortcut($)
@@ -1097,6 +1098,7 @@ export const register: Register = (on, options) => {
       argumentHint: '[add|share|remove <word…>]',
     })
     if (e.isInteractive) {
+      await probePaint($)
       scheduleCheck($, undefined)
     } else if (
       (await $.env.get('CLAUDE_CODE_ENTRYPOINT')) === PANEL_ENTRYPOINT
@@ -1132,19 +1134,13 @@ export const register: Register = (on, options) => {
     stopPanelPoll()
     await syncDraft($, e.text)
     const edited = await next(e)
-    noteEdit(edited.text)
     if (edited.text !== e.text) {
       await onDraftChange($, e, edited.text)
     }
     const offered = offeredAt(edited.text, edited.cursor)
     await setOffering($, offered !== undefined)
-    return {
-      ...edited,
-      decorations: [
-        ...(edited.decorations ?? []),
-        ...decorationsFor(live.spans, offered),
-      ],
-    }
+    await paintMarks($, edited.text, live.spans, offered)
+    return edited
   })
 
   on('prompt.autocomplete', async ($, e, next) => {
@@ -1163,8 +1159,11 @@ export const register: Register = (on, options) => {
   })
 
   on('prompt.change', async ($, e, next) => {
+    // Shell mode can end here with no hint drawn; the next hint sets it again.
+    if (e.origin.kind === 'clear') {
+      setShellMode($, false)
+    }
     if (e.origin.kind !== 'plugin' || e.origin.name !== $.plugin.name) {
-      noteEdit(e.text)
       await syncDraft($, e.text)
     }
     return next(e)
@@ -1182,7 +1181,7 @@ export const register: Register = (on, options) => {
     }
     const isDraftSent = live.draftText === e.text
     forgetDraft()
-    noteEdit('')
+    setShellMode($, false)
     // A late submit while the box is empty must not close /rephrase's rewrites.
     if (isDraftSent) {
       await settleRephrase($)
@@ -1209,8 +1208,18 @@ export const register: Register = (on, options) => {
     text: await runWordsCommand($, e.args),
   }))
 
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    // Read back from the drawn row, so the hint can end in blank cells.
+    const isShell = e.props.hint.trimEnd().endsWith(SHELL_HINT)
+    if (setShellMode($, isShell)) {
+      scheduleCheck($, undefined)
+    }
+    return next(e)
+  })
+
+  // A rewrite picked in shell mode would replace the draft and end the mode.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) {
+    if (e.props.hasSurvey || live.isShell) {
       return next(e)
     }
     const [list, hidden, offering, phrase] = await Promise.all([

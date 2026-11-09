@@ -31,7 +31,7 @@ jobs:
     name: Oldest supported Claude Code
     runs-on: ubuntu-latest
     env:
-      OLDEST: 2.1.300
+      OLDEST: 2.1.316
     steps:
       - uses: actions/checkout@v7
       - name: Install Claude Code ${{ env.OLDEST }}

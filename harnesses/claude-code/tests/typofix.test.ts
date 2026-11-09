@@ -90,11 +90,15 @@ interface World {
   clock: MockClock
   draft: string
   cursor: number | undefined
+  inputMode: 'prompt' | 'shell'
   settingsReads: number
   keybindings: string | undefined
   argvs: (readonly string[])[]
   repaints: PromptDecoration[][]
+  paintAnswer: 'painted' | 'unpainted' | 'denied' | 'missing'
+  paintHold: CallHold | undefined
   filled: string[]
+  fillMarks: PromptDecoration[][]
   isFillRefused: boolean
   toasts: string[]
   stdins: string[]
@@ -116,10 +120,8 @@ interface World {
   prompts: string[]
   isSubmitDropped: boolean
   submitHold: CallHold | undefined
-  fillHold: CallHold | undefined
   processHold: CallHold | undefined
   root: string
-  afterFill: ((text: string) => Promise<void>) | undefined
   isReadSilent: boolean
   surfaces: RenderSurface[]
   modelDelayMs: number
@@ -188,51 +190,8 @@ const macIssues = (...words: readonly string[]): MacIssue[] =>
 const STOR_DRAFT = 'He go to the stor today'
 const storTypo = (): Process => macFinds({ word: 'stor', choices: ['store'] })
 
-interface FillEcho {
-  readonly afterFill: (text: string) => Promise<void>
-  readonly count: () => number
-}
-
 const isCall = (value: unknown): value is (e: unknown) => Promise<unknown> =>
   typeof value === 'function'
-
-// Claude Code raises prompt.autocomplete for the box change of a fill before
-// the fill resolves, so typofix's hook syncs the draft first. The kit's raise
-// is untyped; a kit without it fails the test instead of skipping the echo.
-function echoFills($: Engine, on: On): FillEcho {
-  let reach: (() => void) | undefined
-  on('prompt.autocomplete', () => {
-    reach?.()
-    return { suggestions: [] }
-  })
-  const raise: unknown = Reflect.get($.prompt, 'autocomplete')
-  if (!isCall(raise)) {
-    throw new Error('the test kit cannot raise prompt.autocomplete')
-  }
-  let echoes = 0
-  const afterFill = async (text: string): Promise<void> => {
-    const token = /\S+$/.exec(text)?.[0] ?? ''
-    if (token === '') {
-      return
-    }
-    echoes += 1
-    const reached = new Promise<void>(resolve => {
-      reach = resolve
-    })
-    raise({
-      text,
-      cursor: text.length,
-      token,
-      start: text.length - token.length,
-    }).catch(() => undefined)
-    await reached
-    // Turns enough for typofix's hook to finish its syncDraft.
-    for (let turn = 0; turn < 300; turn++) {
-      await Promise.resolve()
-    }
-  }
-  return { afterFill, count: () => echoes }
-}
 
 const WITHOUT_HUNSPELL: readonly (readonly [string, TestOptions])[] = [
   ['hunspell off', { options: { hunspell: '' } }],
@@ -321,11 +280,15 @@ function setup(
     clock: mock.clock(on),
     draft,
     cursor: undefined,
+    inputMode: 'prompt',
     settingsReads: 0,
     keybindings: undefined,
     argvs: [],
     repaints: [],
+    paintAnswer: 'painted',
+    paintHold: undefined,
     filled: [],
+    fillMarks: [],
     isFillRefused: false,
     toasts: [],
     stdins: [],
@@ -343,10 +306,8 @@ function setup(
     prompts: [],
     isSubmitDropped: false,
     submitHold: undefined,
-    fillHold: undefined,
     processHold: undefined,
     root: '/work',
-    afterFill: undefined,
     isReadSilent: false,
     surfaces: [],
     modelDelayMs: 0,
@@ -403,21 +364,46 @@ function setup(
       value: { text: world.draft, cursor: world.cursor ?? world.draft.length },
     }
   })
-  on('prompt.fill', async (_$, e) => {
-    const hold = world.fillHold
-    world.fillHold = undefined
-    await hold?.wait()
+  on('prompt.fill', (_$, e) => {
     if (world.isFillRefused) {
       return { isFilled: false }
     }
-    if (e.text === world.draft) {
-      world.repaints.push([...(e.decorations ?? [])])
-    } else {
-      world.filled.push(e.text)
-    }
+    world.filled.push(e.text)
+    world.fillMarks.push([...(e.decorations ?? [])])
     world.draft = e.text
-    await world.afterFill?.(e.text)
+    // As Claude Code does: only a replace fill ends shell mode.
+    if (e.mode === 'replace') {
+      world.inputMode = 'prompt'
+    }
     return { isFilled: true }
+  })
+  on('prompt.paint', async (_$, e, next) => {
+    if (world.paintAnswer === 'missing') {
+      return next(e)
+    }
+    if (world.paintAnswer === 'denied') {
+      return { deny: 'another mod refuses paints' }
+    }
+    const hold = world.paintHold
+    world.paintHold = undefined
+    await hold?.wait()
+    const isStale = e.decorations.length > 0 && e.text !== world.draft
+    // typofix's check at start paints an empty list over no draft.
+    if (!isStale && e.text !== undefined) {
+      world.repaints.push([...e.decorations])
+    }
+    return {
+      value: {
+        isPainted: !isStale && world.paintAnswer === 'painted',
+        text: world.draft,
+        cursor: world.cursor ?? world.draft.length,
+      },
+    }
+  })
+  on('prompt.edit', (_$, e) => {
+    world.draft = e.text.slice(0, e.start) + e.inputText + e.text.slice(e.end)
+    world.cursor = e.start + e.inputText.length
+    return { text: world.draft, cursor: world.cursor }
   })
   on('prompt.change', (_$, e) => ({ text: e.text }))
   on('prompt.submit', async (_$, e) => {
@@ -479,7 +465,36 @@ function setup(
   return world
 }
 
-// The kit's raise of prompt.change is untyped, as in echoFills.
+// The kit's raises of prompt.change and prompt.edit are untyped.
+async function typeAt(
+  $: Engine,
+  text: string,
+  at: number,
+  inputText: string,
+): Promise<unknown> {
+  const edit: unknown = Reflect.get($.prompt, 'edit')
+  if (!isCall(edit)) {
+    throw new Error('the test kit cannot raise prompt.edit')
+  }
+  return edit({
+    origin: { kind: 'composer' },
+    text,
+    cursor: at,
+    start: at,
+    end: at,
+    inputText,
+  })
+}
+
+const SHELL = '! for shell mode'
+const hintLine = (hint: string) =>
+  ({
+    plugin: PLUGIN,
+    component: 'PromptHint',
+    surface: 'terminal',
+    props: { hint, isDraft: true, isWorking: false },
+  }) as const
+
 async function changeBox(
   $: Engine,
   text: string,
@@ -1442,12 +1457,32 @@ describe('marking the word', () => {
     ])
   })
 
-  test('no repaint while the cursor is inside the draft, so it never moves', async ($, on) => {
+  test('a typo is marked at once while the cursor is inside the draft, and the cursor stays', async ($, on) => {
     const world = setup(on, twoTypos(), 'fix teh bug wiht')
     world.cursor = 3
     await startAndCheck($, world)
 
-    expect(world.repaints).toEqual([])
+    expect(world.filled).toEqual([])
+    expect(world.repaints).toEqual([
+      [
+        { start: 4, end: 7, underline: true, color: 'error' },
+        { start: 12, end: 16, underline: true, color: 'error' },
+      ],
+    ])
+    expect(world.cursor).toBe(3)
+  })
+
+  test('the typo right before the cursor inside the draft is the bold one', async ($, on) => {
+    const world = setup(on, twoTypos(), 'fix teh bug wiht')
+    world.cursor = 7
+    await startAndCheck($, world)
+
+    expect(world.repaints).toEqual([
+      [
+        { start: 4, end: 7, underline: true, color: 'error', bold: true },
+        { start: 12, end: 16, underline: true, color: 'error' },
+      ],
+    ])
   })
 
   test('no repaint when the check found nothing', async ($, on) => {
@@ -1477,18 +1512,20 @@ describe('marking the word', () => {
         await world.clock.advance(400)
 
         expect(world.filled).toEqual(['He go to the store now'])
+        expect(world.fillMarks).toEqual([[]])
         expect(world.repaints).toEqual([
           [
             { start: 3, end: 5, underline: true, color: 'warning' },
             { start: 9, end: 12, underline: true, color: 'error' },
           ],
+          [{ start: 3, end: 5, underline: true, color: 'warning' }],
           [],
         ])
       },
     )
 
     test(
-      `a check that finds nothing more leaves the box alone while the cursor is inside the draft (${hunspell})`,
+      `a check that finds nothing more takes the last underline off at once while the cursor is inside the draft (${hunspell})`,
       options,
       async ($, on) => {
         const world = setup(on, grammarUntilFixed, 'He go to teh store now')
@@ -1498,7 +1535,8 @@ describe('marking the word', () => {
         world.cursor = 3
         await world.clock.advance(400)
 
-        expect(world.repaints).toHaveLength(1)
+        expect(world.repaints.at(-1)).toEqual([])
+        expect(world.cursor).toBe(3)
       },
     )
   }
@@ -1519,15 +1557,15 @@ describe('marking the word', () => {
     ])
   })
 
-  test('a band fix made while a repaint was on its way stays in the box', async ($, on) => {
+  test('a band fix made while a paint was on its way stays in the box, and the stale paint marks nothing', async ($, on) => {
     const world = setup(on, twoTypos(), 'fix teh bug wiht now')
-    const hold = holdCall()
-    world.fillHold = hold
     await $.session.start({
       cwd: '/work',
       surface: 'terminal',
       isInteractive: true,
     })
+    const hold = holdCall()
+    world.paintHold = hold
     const checked = world.clock.advance(400)
     await hold.reached
     const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
@@ -1537,79 +1575,42 @@ describe('marking the word', () => {
     hold.release()
     await checked
     await world.clock.advance(0)
-    expect(world.filled).toEqual([
-      'fix the bug wiht now',
-      'fix teh bug wiht now',
-      'fix the bug wiht now',
+    expect(world.filled).toEqual(['fix the bug wiht now'])
+    expect(world.draft).toBe('fix the bug wiht now')
+    expect(world.repaints).toEqual([
+      [{ start: 12, end: 16, underline: true, color: 'error' }],
     ])
-    expect(world.draft).toBe('fix the bug wiht now')
   })
 
-  test('a band fix made while a repaint was on its way stays in the box, though the fix itself already synced the draft', async ($, on) => {
-    const world = setup(on, twoTypos(), 'fix teh bug wiht now')
-    const echo = echoFills($, on)
-    world.afterFill = echo.afterFill
-    const hold = holdCall()
-    world.fillHold = hold
-    await $.session.start({
-      cwd: '/work',
-      surface: 'terminal',
-      isInteractive: true,
-    })
-    const checked = world.clock.advance(400)
-    await hold.reached
-    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-    await band.press({ key: 'fix-1-1' })
-    hold.release()
-    await checked
-    await world.clock.advance(0)
-
-    expect(echo.count()).toBeGreaterThan(0)
-    expect(world.draft).toBe('fix the bug wiht now')
-  })
-
-  test('a rewrite picked while a repaint was on its way stays in the box, though it already synced the draft', async ($, on) => {
-    const world = setup(
-      on,
-      macFinds({ word: 'teh', choices: ['the'] }),
-      'He go to teh store now',
-    )
-    const echo = echoFills($, on)
-    world.afterFill = echo.afterFill
-    const hold = holdCall()
-    world.fillHold = hold
-    await $.session.start({
-      cwd: '/work',
-      surface: 'terminal',
-      isInteractive: true,
-    })
-    const checked = world.clock.advance(400)
-    await hold.reached
-    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-    await band.press({ key: 'rephrase' })
-    await band.press({ key: 'rewrite-1' })
-    hold.release()
-    await checked
-    await world.clock.advance(0)
-
-    expect(echo.count()).toBeGreaterThan(0)
-    expect(world.draft).toBe(REWRITES[0])
-  })
-
-  test('an ignore fills nothing when a key landed after it read the box', async ($, on) => {
-    const world = setup(on, twoTypos(), 'teh bug wiht now', {
-      atRead: 6,
-      draft: 'teh bug wiht now!',
-    })
+  test('an ignore marks nothing when a key landed while its paint was on its way', async ($, on) => {
+    const world = setup(on, twoTypos(), 'teh bug wiht now')
     await startAndCheck($, world)
     const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-    expect(world.reads).toBe(4)
-    await band.press({ key: 'ignore-1' })
+    const hold = holdCall()
+    world.paintHold = hold
+    const ignored = band.press({ key: 'ignore-1' })
+    await hold.reached
+    world.draft = 'teh bug wiht now!'
+    hold.release()
+    await ignored
 
     expect(world.draft).toBe('teh bug wiht now!')
     expect(world.filled).toEqual([])
     expect(world.repaints).toHaveLength(1)
     expect(await band.find({ type: 'Text', text: /1 typo\b/ })).toBeDefined()
+  })
+
+  test('a typed key moves the marks with it, and the edit hands back no marks of its own', async ($, on) => {
+    const world = setup(on, twoTypos(), 'fix teh bug wiht')
+    await startAndCheck($, world)
+    const edited = await typeAt($, 'fix teh bug wiht', 0, '!')
+
+    expect(edited).toEqual({ text: '!fix teh bug wiht', cursor: 1 })
+    expect(world.repaints.at(-1)).toEqual([
+      { start: 5, end: 8, underline: true, color: 'error' },
+      { start: 13, end: 17, underline: true, color: 'error' },
+    ])
+    expect(world.filled).toEqual([])
   })
 
   test('no repaint when the draft changed during the check', async ($, on) => {
@@ -1621,6 +1622,217 @@ describe('marking the word', () => {
 
     expect(world.repaints).toEqual([])
     expect(world.filled).toEqual([])
+  })
+})
+
+describe('shell mode', () => {
+  const NORMAL = '? for shortcuts'
+  const SHELL_HINTS = [SHELL, `-- INSERT -- ${SHELL}`, `${SHELL}   `] as const
+  const heloUntilFixed: Process = (argv, stdin) =>
+    stdin.includes('helo')
+      ? macFinds({ word: 'helo', choices: ['hello'] })(argv, stdin)
+      : macFinds()(argv, stdin)
+  const twoTypos = (): Process =>
+    macFinds(
+      { word: 'helo', choices: ['hello'] },
+      { word: 'wrold', choices: ['world'] },
+    )
+
+  async function start($: Engine): Promise<void> {
+    await $.session.start({
+      cwd: '/work',
+      surface: 'terminal',
+      isInteractive: true,
+    })
+  }
+
+  test('with no hint drawn, a shell command is marked and cleared by paints only, so the box stays in shell mode', async ($, on) => {
+    const world = setup(on, heloUntilFixed, 'echo helo world')
+    world.inputMode = 'shell'
+    world.cursor = 0
+    await startAndCheck($, world)
+    expect(world.repaints).toEqual([
+      [{ start: 5, end: 9, underline: true, color: 'error' }],
+    ])
+
+    await typeAt($, 'echo helo world', 8, 'l')
+    await world.clock.advance(400)
+    expect(world.repaints.at(-1)).toEqual([])
+    expect(world.filled).toEqual([])
+    expect(world.inputMode).toBe('shell')
+  })
+
+  test('with no hint drawn, an ignore keeps shell mode and a band fix ends it', async ($, on) => {
+    const world = setup(on, twoTypos(), 'echo helo wrold')
+    world.inputMode = 'shell'
+    world.cursor = 0
+    await startAndCheck($, world)
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+    await band.press({ key: 'ignore-1' })
+    expect(world.inputMode).toBe('shell')
+    expect(world.repaints.at(-1)).toEqual([
+      { start: 10, end: 15, underline: true, color: 'error' },
+    ])
+
+    await band.press({ key: 'fix-1-1' })
+    expect(world.filled).toEqual(['echo helo world'])
+    expect(world.fillMarks).toEqual([[]])
+    expect(world.inputMode).toBe('prompt')
+  })
+
+  for (const hint of SHELL_HINTS) {
+    test(`under the hint ${JSON.stringify(hint)} nothing is checked or listed, and a normal hint checks again`, async ($, on) => {
+      const world = setup(on, twoTypos(), 'git stauts helo wrold')
+      world.cursor = 0
+      await start($)
+      const line = await $.ui.mount(hintLine(hint))
+      await world.clock.advance(400)
+
+      expect(world.programs).toEqual([])
+      expect(world.repaints).toEqual([])
+      const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+      expect(await band.find({ key: 'fix-1-1' })).toBeUndefined()
+      expect(
+        await band.find({ type: 'Text', text: 'drawn by Claude Code' }),
+      ).toBeDefined()
+
+      await line.redraw({ hint: NORMAL, isDraft: true, isWorking: false })
+      await world.clock.advance(400)
+      expect(world.programs).toContain('osascript')
+      expect(await band.find({ key: 'fix-1-1' })).toMatchObject({
+        text: 'hello',
+      })
+    })
+  }
+
+  test('the shell hint takes the band away at once and the marks with the next check', async ($, on) => {
+    const world = setup(on, twoTypos(), 'fix helo now wrold')
+    world.cursor = 0
+    await startAndCheck($, world)
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ key: 'fix-1-1' })).toBeDefined()
+
+    world.inputMode = 'shell'
+    await $.ui.mount(hintLine(SHELL))
+    expect(await band.find({ key: 'fix-1-1' })).toBeUndefined()
+    const checks = world.programs.length
+    await world.clock.advance(400)
+    expect(world.programs).toHaveLength(checks)
+    expect(world.repaints.at(-1)).toEqual([])
+    expect(world.filled).toEqual([])
+    expect(world.inputMode).toBe('shell')
+  })
+
+  test("the band hides /rephrase's rewrites in shell mode and shows them again after it", async ($, on) => {
+    const world = setup(on, storTypo(), STOR_DRAFT)
+    await startAndCheck($, world)
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    await band.press({ key: 'rephrase' })
+    expect(await band.find({ key: 'rewrite-1' })).toBeDefined()
+
+    const line = await $.ui.mount(hintLine(SHELL))
+    expect(await band.find({ key: 'rewrite-1' })).toBeUndefined()
+    expect(
+      await band.find({ type: 'Text', text: 'drawn by Claude Code' }),
+    ).toBeDefined()
+
+    await line.redraw({ hint: NORMAL, isDraft: true, isWorking: false })
+    expect(await band.find({ key: 'rewrite-1' })).toBeDefined()
+  })
+
+  for (const end of [
+    'a sent prompt',
+    'a cleared box',
+    'a new session',
+  ] as const) {
+    test(`after ${end} while no hint is drawn, the next draft is checked and listed`, async ($, on) => {
+      const world = setup(on, twoTypos(), 'ls -la')
+      await start($)
+      const line = await $.ui.mount(hintLine(SHELL))
+      const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+      await world.clock.advance(400)
+      expect(world.programs).toEqual([])
+      await line.unmount()
+
+      if (end === 'a sent prompt') {
+        await $.prompt.submit(typed('ls -la'))
+        world.draft = ''
+      } else if (end === 'a cleared box') {
+        world.draft = ''
+        await changeBox($, '', 'clear')
+      } else {
+        world.draft = ''
+        await start($)
+      }
+      await typeAt($, '', 0, 'say helo to the wrold now')
+      await world.clock.advance(400)
+
+      expect(world.programs).toContain('osascript')
+      expect(await band.find({ key: 'fix-1-1' })).toMatchObject({
+        text: 'hello',
+      })
+    })
+  }
+
+  test('a cleared box still under the shell hint stays unchecked, since the redraw reads the hint again', async ($, on) => {
+    const world = setup(on, twoTypos(), 'ls -la')
+    await start($)
+    await $.ui.mount(hintLine(SHELL))
+    await world.clock.advance(400)
+
+    world.draft = ''
+    await changeBox($, '', 'clear')
+    await typeAt($, '', 0, 'say helo to the wrold now')
+    await world.clock.advance(400)
+
+    expect(world.programs).toEqual([])
+  })
+})
+
+describe('a Claude Code without $.prompt.paint', () => {
+  test('toasts once at start, marks nothing, and the band still lists the typos', async ($, on) => {
+    const world = setup(on, macFinds({ word: 'teh', choices: ['the'] }), '')
+    world.paintAnswer = 'missing'
+    await startAndCheck($, world)
+    await startAndCheck($, world)
+    await typeAt($, '', 0, 'fix teh bug')
+    await world.clock.advance(400)
+
+    expect(world.toasts).toEqual([
+      'typofix needs Claude Code 2.1.316 or later for underlines; the band still works.',
+    ])
+    expect(world.repaints).toEqual([])
+    expect(world.filled).toEqual([])
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ key: 'fix-1-1' })).toMatchObject({ text: 'the' })
+  })
+
+  test('a paint another mod refuses gives no toast, and the band still lists the typos', async ($, on) => {
+    const world = setup(on, macFinds({ word: 'teh', choices: ['the'] }), '')
+    world.paintAnswer = 'denied'
+    world.cursor = 0
+    await startAndCheck($, world)
+    await typeAt($, '', 0, 'fix teh bug')
+    await world.clock.advance(400)
+
+    expect(world.toasts).toEqual([])
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ key: 'fix-1-1' })).toMatchObject({ text: 'the' })
+  })
+
+  test('a paint that answers isPainted false still lets the band step aside for the typeahead', async ($, on) => {
+    const world = setup(
+      on,
+      macFinds({ word: 'wiht', choices: ['with'] }),
+      'fix the bug wiht',
+    )
+    world.paintAnswer = 'unpainted'
+    await startAndCheck($, world)
+
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ key: 'fix-1-1' })).toBeUndefined()
+    expect(world.repaints).toHaveLength(1)
   })
 })
 
