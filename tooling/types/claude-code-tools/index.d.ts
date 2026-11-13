@@ -69,7 +69,7 @@ declare module 'claude-code' {
       type_query?: string
       /** list only: the name of a published Artifact type, as a 'types' listing shows it (case does not matter). The listing then shows the Artifacts made from that type instead of the person's gallery. Claude passes this or `type_url`, not both. */
       type?: string
-      /** quickstart only (required): what is being made — 'document' (writing people will keep editing or pass around as text, such as a memo, plan, spec, proposal or notes), 'slides' (a deck or one slide), 'design' (a visual design or prototype on a canvas), 'other' (a page to look at or use: an explainer, a diagram, anything interactive, a dashboard that shows data, anything else, or unsure). */
+      /** quickstart only (required): what is being made — 'document' (writing people will keep editing or pass around as text, such as a memo, plan, spec, proposal or notes), 'slides' (a deck or one slide), 'design' (a visual design or prototype on a canvas), 'other' (a page to look at or use: an explainer, a diagram, anything interactive, a dashboard that shows data, a spreadsheet, anything else, or unsure). */
       intent?: "document" | "slides" | "design" | "other"
       /** quickstart only: false when a design system's link is already in hand (it is then read with its own call) or one was declined. Omitted or true, the result lists the design systems (not for a document) and, for slides or a design, attaches the default one's README. */
       design_systems?: boolean
@@ -890,6 +890,7 @@ declare module 'claude-code' {
       /** The content to write to the file */
       content: string
     }
+    Yield: {}
   }
 }
 
@@ -1319,6 +1320,12 @@ declare module 'claude-code' {
           tier?: string
         }
         motion_type?: {
+          title: string
+          type_url: string
+          description?: string
+          tier?: string
+        }
+        whiteboard_type?: {
           title: string
           type_url: string
           description?: string
@@ -2198,6 +2205,12 @@ declare module 'claude-code' {
           description?: string
           tier?: string
         }
+        whiteboard_type?: {
+          title: string
+          type_url: string
+          description?: string
+          tier?: string
+        }
         types_unavailable?: boolean
         types_ruled?: boolean
         types_ambiguous?: boolean
@@ -3067,6 +3080,12 @@ declare module 'claude-code' {
           tier?: string
         }
         motion_type?: {
+          title: string
+          type_url: string
+          description?: string
+          tier?: string
+        }
+        whiteboard_type?: {
           title: string
           type_url: string
           description?: string
@@ -3946,6 +3965,12 @@ declare module 'claude-code' {
           description?: string
           tier?: string
         }
+        whiteboard_type?: {
+          title: string
+          type_url: string
+          description?: string
+          tier?: string
+        }
         types_unavailable?: boolean
         types_ruled?: boolean
         types_ambiguous?: boolean
@@ -4684,6 +4709,7 @@ declare module 'claude-code' {
     }
     CronDelete: {
       id: string
+      endedLoopWakeup?: true
     }
     CronList: {
       jobs: Array<{
@@ -4841,7 +4867,7 @@ declare module 'claude-code' {
       tmuxSessionName?: string
       discardedFiles?: number
       discardedCommits?: number
-      /** @internal Where the session's cwd ended up: originalCwd, or a fallback when it was gone. */
+      /** @internal Where the session's cwd ended up: originalCwd, or a fallback when it was gone or led outside what the launch gave. */
       restoredCwd?: string
       /** @internal originalCwd was gone (or a network path the session will not touch), so restoredCwd is a fallback directory. */
       originalCwdMissing?: boolean
@@ -4952,6 +4978,7 @@ declare module 'claude-code' {
         presents_as?: string | null
         installation_preference?: string | null
       }>
+      note?: string
     }
     ListSkills: {
       results: Array<{
@@ -4963,6 +4990,7 @@ declare module 'claude-code' {
         presents_as?: string | null
         installation_preference?: string | null
       }>
+      note?: string
     }
     LSP: {
       /** The LSP operation that was performed */
@@ -5113,7 +5141,7 @@ declare module 'claude-code' {
       method: "project_read"
       notice?: string
       path: string
-      /** @internal Lowercase hex SHA-256 of the UTF-8 bytes of a text doc's whole text; never on a project_read that delivered only part of the doc. Set where docVersionsOffered; also, while tengu_lovely_rain and tengu_lucky_nebula are on, on a project_read that saved the whole text to a file and on a project_write by local_path in a checked call. */
+      /** @internal Lowercase hex SHA-256 of the UTF-8 bytes of a text doc's whole text; never on a project_read that delivered only part of the doc. Set where docVersionsOffered; also, while tengu_lovely_rain is on, on a project_read that saved the whole text to a file, and on a project_write by local_path in a conversation (not a script's inner call). A later checked write by path looks for this hash. */
       version?: string
       file_kind?: string
       content?: string
@@ -5129,14 +5157,23 @@ declare module 'claude-code' {
         name?: string
         doc_uuid?: string
         text?: string
+        image_attached?: boolean
+        page?: number
       }[]
+      /** @internal Page images for the hits, sent to the model as image blocks after the JSON. Absent when there are none. stripForStorage removes it before the result is stored or sent to SDK clients. */
+      images?: Array<{
+        content_id: string
+        page?: number
+        media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+        data: string
+      }>
       docs?: string[]
     } | {
       method: "project_write"
       notice?: string
       path: string
       doc_uuid: string
-      /** @internal Lowercase hex SHA-256 of the UTF-8 bytes of a text doc's whole text; never on a project_read that delivered only part of the doc. Set where docVersionsOffered; also, while tengu_lovely_rain and tengu_lucky_nebula are on, on a project_read that saved the whole text to a file and on a project_write by local_path in a checked call. */
+      /** @internal Lowercase hex SHA-256 of the UTF-8 bytes of a text doc's whole text; never on a project_read that delivered only part of the doc. Set where docVersionsOffered; also, while tengu_lovely_rain is on, on a project_read that saved the whole text to a file, and on a project_write by local_path in a conversation (not a script's inner call). A later checked write by path looks for this hash. */
       version?: string
       replaced: boolean
       present_to_user?: boolean
@@ -5273,6 +5310,8 @@ declare module 'claude-code' {
         mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp"
         /** Why the page could not be processed as an image; set only when base64 is empty */
         error?: string
+        /** @internal The page's text layer. Set only when the call named no page range and the PDF was too large to read whole */
+        text?: string
       }>
     }
     ReadMcpResourceDirTool: {
@@ -5474,6 +5513,10 @@ declare module 'claude-code' {
           original_width: number
           original_height: number
         }
+        thumbnail?: {
+          width: number
+          height: number
+        }
         project_path?: string
         partial_error?: string
       }[]
@@ -5498,6 +5541,10 @@ declare module 'claude-code' {
           height: number
           original_width: number
           original_height: number
+        }
+        thumbnail?: {
+          width: number
+          height: number
         }
       }[]
       /** ISO timestamp captured at tool execution on the emitting process. Optional — resumed sessions replay pre-sentAt outputs verbatim. */
@@ -5722,6 +5769,23 @@ declare module 'claude-code' {
     WrapUp: {
       /** Whether the call put a question to the user */
       asks: boolean
+      /** The next-step box for this call, to draw without reading the tool's input. Open the box when blocked is true or actions isn't empty; otherwise draw no box. Trust it only when the result's entry in tool_result_meta has built_in_tool set to this tool. It is built from the input the call ran with; where a permission answer or a hook before the call changed that input, the entry has no built_in_tool. The recap and the question are each cleaned to one line of at most 500 UTF-16 units, ending in an ellipsis where that limit cut it, with no whole <cc-memory> markers, no terminal escape sequences and no invisible characters other than those an emoji or a word needs. A placeholder such as [REDACTED] or <token> stands in place of most keys and tokens recognised by their shape. A private key that could not be masked, or a tool call's own markup, is cut with all the text after it, and an ellipsis then shows only if what is left still passes that limit or the text ran past 2000 units. Draw the recap and the question as plain text, as they stand: they may hold Markdown, HTML or links, and normalizing them can undo the cleaning. Absent from a result stored by an earlier version of Claude Code. */
+      nextStep?: {
+        /** Claude's short summary of the turn. Empty when nothing visible is left, or when it holds a key that cannot be masked alone (one that an invisible character, an accent or nested markers part, or whose rest comes to stand right after its mask), even when ask is present. */
+        recap: string
+        /** The decision Claude asks of the user. Absent when Claude asked none, when nothing visible is left, or when it holds a key that cannot be masked alone, as for recap. */
+        ask?: string
+        /** Whether Claude's work stops here until the user answers. Can be true with no question. */
+        blocked: boolean
+        /** The buttons to draw under the question, in Claude's order, its pick first. Two replies with the same label are listed once, and a reply whose label holds a key or token is left out. Empty when there is no question, and when the first button is left out. */
+        actions: Array<{
+          /** A reply button's text. Draw it as plain text with no links. On a click, put exactly this text into the message box and let the person send it. Never send it yourself. */
+          label: string
+        } | {
+          /** One of the app's own buttons: verify checks this turn's changes; fix_ci, address_comments and resolve_conflicts act on an open pull request. The app shows each only while it applies. */
+          action: "verify" | "fix_ci" | "address_comments" | "resolve_conflicts"
+        }>
+      }
     }
     Write: {
       /** Whether a new file was created or an existing file was updated */
@@ -5756,6 +5820,41 @@ declare module 'claude-code' {
       staged?: boolean
       /** @internal Which message a staged result gave (see stagedResultWording); absent unless staged */
       stagedWording?: "review" | "card" | "cloud" | "linked" | "policy"
+    }
+    Yield: {
+      /** Rendered event envelopes, or "(no pending events)" */
+      content: string
+      /** Number of events delivered in this result */
+      eventCount: number
+      /** Wake events still queued after this chunk; they follow in the next delivery */
+      remainingWakeCount: number
+      /** Each delivered event's images and documents, 1:1 with the events. Absent when none has any */
+      media?: Array<Array<{
+        type: "image"
+        source: {
+          type: "base64"
+          media_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+          data: string
+        }
+      } | {
+        type: "document"
+        source: {
+          type: "base64"
+          media_type: "application/pdf"
+          data: string
+        }
+      }>>
+      toolsUsed?: string[]
+      provenance?: Array<{
+        authority: "human-principal" | "human-other" | "peer-agent" | "world-event"
+        senderId?: string
+        senderText?: string
+      } | null>
+      declared?: Array<{
+        kind: string
+        at: string
+        fields: {}
+      } | null>
     }
   }
 }

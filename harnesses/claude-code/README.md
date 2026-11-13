@@ -271,4 +271,4 @@ project, and every function in it carries JSDoc types. `osascript` calls the
 uses. In `osascript`, counts and positions arrive as strings (`"25"`), so the
 types say `string` and the script converts them with `Number()`.
 
-Tested with Claude Code 2.1.319 on macOS.
+Tested with Claude Code 2.1.325 on macOS.
