@@ -1,7 +1,7 @@
 # typofix
 
 typofix checks the spelling and grammar of your prompt while you type in an AI
-coding tool, offers up to 3 fixes for each mistake, and rewrites the whole
+coding tool, offers up to 3 fixes for each typo, and rewrites the whole
 draft with Haiku when you ask. It is made for people who write their prompts in
 a second language.
 
@@ -20,7 +20,7 @@ all of them share the logic in [`packages/core`](packages/core/README.md).
 
 ## Install in Claude Code
 
-typofix needs Claude Code 2.1.300 or later. Add one of its two marketplaces,
+typofix needs Claude Code 2.1.316 or later. Add one of its two marketplaces,
 then install it:
 
 ```shell
@@ -101,7 +101,7 @@ commit `tooling/types/`.
 
 CI runs `bun run check` with the Claude Code version that wrote
 `tooling/types/`, and runs `validate` and `test` with the oldest Claude Code
-typofix supports (2.1.300).
+typofix supports (2.1.316).
 
 ## Release
 
@@ -127,11 +127,11 @@ Three rules decide what users get:
   new version when they run `claude plugin update typofix@typofix` (or
   `typofix@lifebugz`), which refreshes the marketplace first, unless they
   turned auto-update on. When the version is the same, that command says so,
-  for example `typofix is already at the latest version (0.2.1).`
+  for example `typofix is already at the latest version (0.3.0).`
 - **New installs.** `claude plugin install typofix@typofix` refreshes the
   marketplace first and copies `harnesses/claude-code` from `main` as it is at
   that moment, under whatever version it names. So a merge that keeps the
-  version still reaches new users, and two copies that both say 0.2.1 can
+  version still reaches new users, and two copies that both say 0.3.0 can
   differ. Raise the version whenever the plugin folder changes.
 - **The pinned commit.** Claude Code installs exactly the commit that the
   cc-marketplace entry's `sha` names. A change here reaches `typofix@lifebugz`
@@ -147,16 +147,16 @@ as a new description, needs none either: it reaches `typofix@typofix` users
 the next time their copy of the marketplace refreshes, for example at their
 next `claude plugin update typofix@typofix`.
 
-To release 0.2.2:
+To release 0.3.1:
 
 1. Make the change on a branch. If `packages/core` changed, run
    `bun run core:sync`.
 2. In `harnesses/claude-code/.claude-plugin/plugin.json`, raise `version` from
-   `0.2.1` to `0.2.2`.
+   `0.3.0` to `0.3.1`.
 3. Run `bun run check`, push the branch, and open a pull request. CI publishes
    nothing, and `main` has no rule that blocks a merge when CI fails, so merge
    only after CI passes. The merge into `main` is the release: from then on,
-   `typofix@typofix` users get 0.2.2 at their next `claude plugin update`.
+   `typofix@typofix` users get 0.3.1 at their next `claude plugin update`.
 4. Find the commit your merge created on `main` (the pull request page shows
    it). CI runs again on that push to `main`; check that it passed. If nothing
    was merged after yours, `git fetch origin` and then
@@ -164,15 +164,15 @@ To release 0.2.2:
    the full 40 characters.
 5. On lifebugz/cc-marketplace, open a pull request that sets the `typofix`
    entry's `sha` to that id. When a maintainer of that repository merges it,
-   `typofix@lifebugz` users get 0.2.2 at their next `claude plugin update`.
+   `typofix@lifebugz` users get 0.3.1 at their next `claude plugin update`.
 
-What each step reaches, for users who already have 0.2.1:
+What each step reaches, for users who already have 0.3.0:
 
 | You did                                      | `typofix@typofix`                           | `typofix@lifebugz`               |
 | :------------------------------------------- | :------------------------------------------ | :------------------------------- |
-| Merged a change and kept `version` at 0.2.1  | stay on 0.2.1 (new installs get the change) | stay on 0.2.1 (new installs too) |
-| Merged the change with `version` 0.2.2 (1-3) | 0.2.2                                       | stay on 0.2.1                    |
-| Then merged the `sha` pull request (4-5)     | 0.2.2                                       | 0.2.2                            |
+| Merged a change and kept `version` at 0.3.0  | stay on 0.3.0 (new installs get the change) | stay on 0.3.0 (new installs too) |
+| Merged the change with `version` 0.3.1 (1-3) | 0.3.1                                       | stay on 0.3.0                    |
+| Then merged the `sha` pull request (4-5)     | 0.3.1                                       | 0.3.1                            |
 
 `claude plugin list` shows the version each install has.
 

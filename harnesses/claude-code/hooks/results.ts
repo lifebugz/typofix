@@ -24,9 +24,21 @@ export function failureOf(
 
 // Claude Code words a refused call as `<plugin>: $.<op>: <reason>`.
 export function reasonOf(error: unknown, plugin: string): string {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = messageOf(error)
   const rest = message.startsWith(`${plugin}: `)
     ? message.slice(plugin.length + 2)
     : message
   return rest.replace(ENGINE_OP, '')
+}
+
+export function isRefusal(error: unknown, plugin: string): boolean {
+  const message = messageOf(error)
+  const prefix = `${plugin}: `
+  return (
+    message.startsWith(prefix) && ENGINE_OP.test(message.slice(prefix.length))
+  )
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
