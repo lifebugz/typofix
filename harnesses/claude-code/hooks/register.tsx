@@ -82,6 +82,7 @@ interface Live {
   isOffering: boolean
   isShell: boolean
   hasPaint: boolean | undefined
+  hasWarnedBlocked: boolean
   hiddenFor: string | undefined
   checkTimer: Timer | undefined
   backend: Backend | null | undefined
@@ -123,6 +124,8 @@ const NO_BACKEND =
   'no spell checker or dictionary found (Linux: install enchant-2 or hunspell and a dictionary such as en_US). /rephrase still works.'
 const NO_PAINT =
   'typofix needs Claude Code 2.1.316 or later for underlines; the band still works.'
+const BLOCKED_PAINT =
+  "another mod blocks typofix's underlines; the band still works."
 // The hint line under the box in shell mode; vim mode puts `-- INSERT -- ` first.
 const SHELL_HINT = '! for shell mode'
 
@@ -144,6 +147,7 @@ const live: Live = {
   isOffering: false,
   isShell: false,
   hasPaint: undefined,
+  hasWarnedBlocked: false,
   hiddenFor: undefined,
   checkTimer: undefined,
   backend: undefined,
@@ -356,9 +360,28 @@ async function markDraft(
       $.ui.log(`typofix: could not mark the draft: ${String(error)}`, {
         to: 'debug',
       })
+      noteBlockedMarks($, spans, error)
     }
   }
   await setOffering($, offered !== undefined)
+}
+
+// A refused clear loses no underline, and a mod may refuse only some paints,
+// so typofix keeps painting and speaks once, at the first underline lost.
+function noteBlockedMarks(
+  $: EngineInterface,
+  spans: readonly Span[],
+  error: unknown,
+): void {
+  if (
+    spans.length === 0 ||
+    live.hasWarnedBlocked ||
+    !isRefusal(error, $.plugin.name)
+  ) {
+    return
+  }
+  live.hasWarnedBlocked = true
+  $.ui.toast(BLOCKED_PAINT, { timeoutMs: 8000 })
 }
 
 // Claude Code words a hook's refusal of a call it has as
@@ -1071,6 +1094,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     forgetDraft()
     setShellMode($, false)
+    live.hasWarnedBlocked = false
     live.shippedKeys = undefined
     await resetState($)
     await readShortcut($)

@@ -221,6 +221,9 @@ terminal. Tested with the VS Code extension 2.1.306.
   and an underline the check no longer finds goes away at once too. The word
   whose fixes are showing is also bold. Marking never moves the cursor or
   changes the draft.
+- Another mod can refuse typofix's underlines. Then typofix says so once per
+  session, the first time an underline is lost, and keeps trying; the band
+  still lists the typos.
 - Claude Code decides where the suggestion list is drawn. The band steps aside so
   the fixes sit next to the prompt; it comes back when the cursor moves on.
 - A fix taken with Tab keeps the cursor where it is. In the terminal and the

@@ -96,7 +96,8 @@ interface World {
   keybindings: string | undefined
   argvs: (readonly string[])[]
   repaints: PromptDecoration[][]
-  paintAnswer: 'painted' | 'unpainted' | 'denied' | 'missing'
+  paintAnswer:
+    'painted' | 'unpainted' | 'denied' | 'denied-when-empty' | 'missing'
   paintHold: CallHold | undefined
   filled: string[]
   fillMarks: PromptDecoration[][]
@@ -382,7 +383,10 @@ function setup(
     if (world.paintAnswer === 'missing') {
       return next(e)
     }
-    if (world.paintAnswer === 'denied') {
+    if (
+      world.paintAnswer === 'denied' ||
+      (world.paintAnswer === 'denied-when-empty' && e.decorations.length === 0)
+    ) {
       return { deny: 'another mod refuses paints' }
     }
     const hold = world.paintHold
@@ -1834,17 +1838,47 @@ describe('a Claude Code without $.prompt.paint', () => {
     expect(await band.find({ key: 'fix-1-1' })).toMatchObject({ text: 'the' })
   })
 
-  test('a paint another mod refuses gives no toast, and the band still lists the typos', async ($, on) => {
-    const world = setup(on, macFinds({ word: 'teh', choices: ['the'] }), '')
-    world.paintAnswer = 'denied'
-    world.cursor = 0
-    await startAndCheck($, world)
-    await typeAt($, '', 0, 'fix teh bug')
-    await world.clock.advance(400)
+  const BLOCKED =
+    "another mod blocks typofix's underlines; the band still works."
+  const tehWhenTyped: Process = (argv, stdin) =>
+    stdin.includes('teh')
+      ? macFinds({ word: 'teh', choices: ['the'] })(argv, stdin)
+      : macFinds()(argv, stdin)
 
+  test('a mod that refuses every paint gets one toast per session, at the first underline lost, and the band still lists the typos', async ($, on) => {
+    const world = setup(on, tehWhenTyped, '')
+    world.paintAnswer = 'denied'
+    await startAndCheck($, world)
+    await typeAt($, '', 0, 'fix the bug')
+    await world.clock.advance(400)
     expect(world.toasts).toEqual([])
+
+    await typeAt($, 'fix the bug', 11, ' teh')
+    await world.clock.advance(400)
+    await typeAt($, 'fix the bug teh', 15, ' now')
+    await world.clock.advance(400)
+    expect(world.toasts).toEqual([BLOCKED])
     const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
     expect(await band.find({ key: 'fix-1-1' })).toMatchObject({ text: 'the' })
+
+    await startAndCheck($, world)
+    expect(world.toasts).toEqual([BLOCKED, BLOCKED])
+  })
+
+  test('a mod that refuses only the empty paint at start gets no toast, and the marks show', async ($, on) => {
+    const world = setup(
+      on,
+      macFinds({ word: 'teh', choices: ['the'] }),
+      'fix teh bug',
+    )
+    world.paintAnswer = 'denied-when-empty'
+    world.cursor = 0
+    await startAndCheck($, world)
+
+    expect(world.toasts).toEqual([])
+    expect(world.repaints).toEqual([
+      [{ start: 4, end: 7, underline: true, color: 'error' }],
+    ])
   })
 
   test('a paint that answers isPainted false still lets the band step aside for the typeahead', async ($, on) => {
