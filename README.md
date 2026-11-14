@@ -111,15 +111,16 @@ harness adds its own part below.
 
 ### Claude Code
 
-typofix reaches Claude Code users through two marketplaces, and each one sees a
-release in its own way.
+typofix reaches Claude Code users through two marketplaces. Both entries
+install `harnesses/claude-code` as it is on `main`, so a release reaches both at
+once.
 
-| Plugin id          | Marketplace, where its entry is                                                                          | The entry installs                                                | An installed copy can update, at the user's next `claude plugin update`, once |
-| :----------------- | :------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------- | :---------------------------------------------------------------------------- |
-| `typofix@typofix`  | lifebugz/typofix (this repository), `.claude-plugin/marketplace.json`                                    | `harnesses/claude-code` as it is on `main`                        | `version` changes on `main`                                                   |
-| `typofix@lifebugz` | [lifebugz/cc-marketplace](https://github.com/lifebugz/cc-marketplace), `.claude-plugin/marketplace.json` | `harnesses/claude-code` at the one commit the entry's `sha` names | the `sha` moves to a commit with a new `version`                              |
+| Plugin id          | Marketplace, where its entry is                                                                          |
+| :----------------- | :------------------------------------------------------------------------------------------------------- |
+| `typofix@typofix`  | lifebugz/typofix (this repository), `.claude-plugin/marketplace.json`                                    |
+| `typofix@lifebugz` | [lifebugz/cc-marketplace](https://github.com/lifebugz/cc-marketplace), `.claude-plugin/marketplace.json` |
 
-Three rules decide what users get:
+Two rules decide what users get:
 
 - **The version.** An installed copy updates only when the plugin's version
   changes, and `version` in `harnesses/claude-code/.claude-plugin/plugin.json`
@@ -128,24 +129,20 @@ Three rules decide what users get:
   `typofix@lifebugz`), which refreshes the marketplace first, unless they
   turned auto-update on. When the version is the same, that command says so,
   for example `typofix is already at the latest version (0.3.0).`
-- **New installs.** `claude plugin install typofix@typofix` refreshes the
-  marketplace first and copies `harnesses/claude-code` from `main` as it is at
-  that moment, under whatever version it names. So a merge that keeps the
-  version still reaches new users, and two copies that both say 0.3.0 can
-  differ. Raise the version whenever the plugin folder changes.
-- **The pinned commit.** Claude Code installs exactly the commit that the
-  cc-marketplace entry's `sha` names. A change here reaches `typofix@lifebugz`
-  users only once that `sha` moves to a commit that contains it: new installs
-  then get that commit, and existing installs update if its `version` is new.
+- **New installs.** `claude plugin install` refreshes the marketplace first and
+  copies `harnesses/claude-code` from `main` as it is at that moment, under
+  whatever version it names. So a merge that keeps the version still reaches
+  new users, and two copies that both say 0.3.0 can differ. Raise the version
+  whenever the plugin folder changes.
 
 A change needs a release when it changes a file under `harnesses/claude-code/`.
 That includes `packages/core/src`, `packages/core/assets/words.txt` and
 `packages/core/assets/macos/spell-macos.js`, because `bun run core:sync` copies
 them into that folder. A change to `tooling/`, core's tests or this README
-needs none. An edit to this repository's `.claude-plugin/marketplace.json`, such
-as a new description, needs none either: it reaches `typofix@typofix` users
-the next time their copy of the marketplace refreshes, for example at their
-next `claude plugin update typofix@typofix`.
+needs none. An edit to either marketplace's `.claude-plugin/marketplace.json`,
+such as a new description, needs none either: it reaches that marketplace's
+users the next time their copy of it refreshes, for example at their next
+`claude plugin update`.
 
 To release 0.3.1:
 
@@ -156,23 +153,16 @@ To release 0.3.1:
 3. Run `bun run check`, push the branch, and open a pull request. CI publishes
    nothing, and `main` has no rule that blocks a merge when CI fails, so merge
    only after CI passes. The merge into `main` is the release: from then on,
-   `typofix@typofix` users get 0.3.1 at their next `claude plugin update`.
-4. Find the commit your merge created on `main` (the pull request page shows
-   it). CI runs again on that push to `main`; check that it passed. If nothing
-   was merged after yours, `git fetch origin` and then
-   `git rev-parse origin/main` print its full id. The `sha` field takes only
-   the full 40 characters.
-5. On lifebugz/cc-marketplace, open a pull request that sets the `typofix`
-   entry's `sha` to that id. When a maintainer of that repository merges it,
-   `typofix@lifebugz` users get 0.3.1 at their next `claude plugin update`.
+   users of both plugin ids get 0.3.1 at their next `claude plugin update`.
+4. CI runs again on that push to `main`. Users can already update while it
+   runs, so check that it passed, and fix `main` at once if it failed.
 
-What each step reaches, for users who already have 0.3.0:
+What a merge reaches, for users who already have 0.3.0:
 
-| You did                                      | `typofix@typofix`                           | `typofix@lifebugz`               |
-| :------------------------------------------- | :------------------------------------------ | :------------------------------- |
-| Merged a change and kept `version` at 0.3.0  | stay on 0.3.0 (new installs get the change) | stay on 0.3.0 (new installs too) |
-| Merged the change with `version` 0.3.1 (1-3) | 0.3.1                                       | stay on 0.3.0                    |
-| Then merged the `sha` pull request (4-5)     | 0.3.1                                       | 0.3.1                            |
+| You did                                     | `typofix@typofix` and `typofix@lifebugz`    |
+| :------------------------------------------ | :------------------------------------------ |
+| Merged a change and kept `version` at 0.3.0 | stay on 0.3.0 (new installs get the change) |
+| Merged the change with `version` 0.3.1      | 0.3.1                                       |
 
 `claude plugin list` shows the version each install has.
 
