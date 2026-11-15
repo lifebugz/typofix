@@ -128,11 +128,11 @@ Two rules decide what users get:
   new version when they run `claude plugin update typofix@typofix` (or
   `typofix@lifebugz`), which refreshes the marketplace first, unless they
   turned auto-update on. When the version is the same, that command says so,
-  for example `typofix is already at the latest version (0.3.0).`
+  for example `typofix is already at the latest version (0.3.1).`
 - **New installs.** `claude plugin install` refreshes the marketplace first and
   copies `harnesses/claude-code` from `main` as it is at that moment, under
   whatever version it names. So a merge that keeps the version still reaches
-  new users, and two copies that both say 0.3.0 can differ. Raise the version
+  new users, and two copies that both say 0.3.1 can differ. Raise the version
   whenever the plugin folder changes.
 
 A change needs a release when it changes a file under `harnesses/claude-code/`.
@@ -144,25 +144,25 @@ such as a new description, needs none either: it reaches that marketplace's
 users the next time their copy of it refreshes, for example at their next
 `claude plugin update`.
 
-To release 0.3.1:
+To release 0.3.2:
 
 1. Make the change on a branch. If `packages/core` changed, run
    `bun run core:sync`.
 2. In `harnesses/claude-code/.claude-plugin/plugin.json`, raise `version` from
-   `0.3.0` to `0.3.1`.
+   `0.3.1` to `0.3.2`.
 3. Run `bun run check`, push the branch, and open a pull request. CI publishes
    nothing, and `main` has no rule that blocks a merge when CI fails, so merge
    only after CI passes. The merge into `main` is the release: from then on,
-   users of both plugin ids get 0.3.1 at their next `claude plugin update`.
+   users of both plugin ids get 0.3.2 at their next `claude plugin update`.
 4. CI runs again on that push to `main`. Users can already update while it
    runs, so check that it passed, and fix `main` at once if it failed.
 
-What a merge reaches, for users who already have 0.3.0:
+What a merge reaches, for users who already have 0.3.1:
 
 | You did                                     | `typofix@typofix` and `typofix@lifebugz`    |
 | :------------------------------------------ | :------------------------------------------ |
-| Merged a change and kept `version` at 0.3.0 | stay on 0.3.0 (new installs get the change) |
-| Merged the change with `version` 0.3.1      | 0.3.1                                       |
+| Merged a change and kept `version` at 0.3.1 | stay on 0.3.1 (new installs get the change) |
+| Merged the change with `version` 0.3.2      | 0.3.2                                       |
 
 `claude plugin list` shows the version each install has.
 

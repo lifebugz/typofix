@@ -20,6 +20,7 @@ import {
   diffSplice,
   extraBackend,
   formatRewrites,
+  hasWordsToCheck,
   hunspellDictionary,
   IDLE,
   isDictionaryLanguage,
@@ -289,7 +290,7 @@ async function runSpellCheck(
     live.spans = respan(live.spans, live.draftText, text)
     live.draftText = text
   }
-  if (text.trim() === '' || isUnchecked(text)) {
+  if (isUnchecked(text)) {
     await clearChecked($, text)
     return
   }
@@ -312,7 +313,7 @@ async function runSpellCheck(
 }
 
 function isUnchecked(text: string): boolean {
-  return text.startsWith('/') || live.isShell
+  return live.isShell || !hasWordsToCheck(text)
 }
 
 async function clearChecked($: EngineInterface, text: string): Promise<void> {
@@ -1161,7 +1162,7 @@ export const register: Register = (on, options) => {
 
   on('prompt.autocomplete', async ($, e, next) => {
     const offered = await next(e)
-    if (e.text.startsWith('/')) {
+    if (e.token.startsWith('/')) {
       return offered
     }
     await syncDraft($, e.text)

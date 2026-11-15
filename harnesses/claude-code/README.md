@@ -239,8 +239,9 @@ terminal. Tested with the VS Code extension 2.1.306.
 - Grammar checks are best effort. The macOS grammar model does not flag the same
   sentence every time, and it misses errors such as `He go` or `three apple`.
   `/rephrase` catches those.
-- The check skips code in backticks, paths, URLs, `@mentions`, and words that
-  look like code (`snake_case`, `getUser`, `JSON`, `v2`).
+- The check skips code in backticks, paths, URLs, slash commands, `@mentions`,
+  and words that look like code (`snake_case`, `getUser`, `JSON`, `v2`). In
+  `/grill-with-docs fix teh bug`, it checks `fix teh bug`.
 - The output of `/rephrase` and `/typo-words` is a transcript line, so Claude
   reads it too.
 
