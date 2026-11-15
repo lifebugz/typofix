@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { maskCode } from '../src/text/mask'
+import { hasWordsToCheck, maskCode } from '../src/text/mask'
 
 describe('maskCode', () => {
   test('keeps every offset and blanks code, paths, links and names', () => {
@@ -37,5 +37,33 @@ describe('maskCode', () => {
     expect(maskCode('see ```\nteh')).toBe(
       `see ${' '.repeat(3)}\n${' '.repeat(3)}`,
     )
+  })
+
+  test('blanks a slash command at the start and in the middle of a draft', () => {
+    expect(maskCode('/grill-with-docs fix teh')).toBe(
+      `${' '.repeat(16)} fix teh`,
+    )
+    expect(maskCode('use /typo-words to chek')).toBe(
+      `use ${' '.repeat(11)} to chek`,
+    )
+  })
+})
+
+describe('hasWordsToCheck', () => {
+  test('is false for a draft that is only a command, a path or code', () => {
+    for (const text of [
+      '',
+      '   ',
+      '/plugin',
+      '/grill-with-docs ',
+      './src/a.ts',
+      '`bun tset`',
+    ]) {
+      expect(hasWordsToCheck(text), JSON.stringify(text)).toBe(false)
+    }
+  })
+
+  test('is true once a word follows the command', () => {
+    expect(hasWordsToCheck('/grill-with-docs fix teh bug')).toBe(true)
   })
 })

@@ -39,6 +39,7 @@ export {
   rephraseLimits,
   REWRITE_LABELS,
 } from './rephrase'
+export { hasWordsToCheck } from './text/mask'
 export { diffSplice, respan, shiftSpans, stillMatching } from './text/spans'
 export type {
   Checked,

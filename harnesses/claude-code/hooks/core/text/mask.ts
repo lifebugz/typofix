@@ -27,6 +27,10 @@ export function maskCode(text: string): string {
   return units.join('')
 }
 
+export function hasWordsToCheck(text: string): boolean {
+  return maskCode(text).trim() !== ''
+}
+
 export function fillRegions(
   text: string,
   regions: 'code' | 'masked',

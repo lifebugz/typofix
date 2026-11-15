@@ -1820,6 +1820,76 @@ describe('shell mode', () => {
   })
 })
 
+describe('a draft that starts with a slash command', () => {
+  const COMMAND = '/grill-with-docs'
+  const DRAFT = `${COMMAND} fix teh bug wiht`
+  const twoTypos = (): Process =>
+    macFinds(
+      { word: 'teh', choices: ['the'] },
+      { word: 'wiht', choices: ['with'] },
+    )
+  const marked = (word: string): PromptDecoration => ({
+    start: DRAFT.indexOf(word),
+    end: DRAFT.indexOf(word) + word.length,
+    underline: true,
+    color: 'error',
+  })
+
+  test('the text after the command is checked, listed and marked, and the checker never reads the command', async ($, on) => {
+    const world = setup(on, twoTypos(), DRAFT)
+    world.cursor = 0
+    await startAndCheck($, world)
+
+    expect(world.stdins[0]).toBe(
+      DRAFT.replace(COMMAND, ' '.repeat(COMMAND.length)),
+    )
+    expect(world.repaints).toEqual([[marked('teh'), marked('wiht')]])
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ type: 'Text', text: /2 typos/ })).toBeDefined()
+  })
+
+  test('a band fix keeps the command as typed', async ($, on) => {
+    const world = setup(on, twoTypos(), DRAFT)
+    world.cursor = 0
+    await startAndCheck($, world)
+
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    await band.press({ key: 'fix-2-1' })
+    expect(world.filled).toEqual([`${COMMAND} fix teh bug with`])
+  })
+
+  test('the typeahead offers the fix for the typo right before the cursor, as the band steps aside', async ($, on) => {
+    const world = setup(on, twoTypos(), DRAFT)
+    on('prompt.autocomplete', () => ({ suggestions: [] }))
+    await startAndCheck($, world)
+
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect(await band.find({ key: 'fix-1-1' })).toBeUndefined()
+    const autocomplete: unknown = Reflect.get($.prompt, 'autocomplete')
+    if (!isCall(autocomplete)) {
+      throw new Error('the test kit cannot raise prompt.autocomplete')
+    }
+    expect(
+      await autocomplete({
+        text: DRAFT,
+        cursor: DRAFT.length,
+        token: 'wiht',
+        start: DRAFT.indexOf('wiht'),
+      }),
+    ).toEqual({
+      suggestions: [{ text: 'with', label: 'with', description: 'fixes wiht' }],
+    })
+  })
+
+  test('a draft that is only a command runs no checker', async ($, on) => {
+    const world = setup(on, twoTypos(), `${COMMAND} `)
+    await startAndCheck($, world)
+
+    expect(world.programs).toEqual([])
+    expect(world.repaints).toEqual([])
+  })
+})
+
 describe('a Claude Code without $.prompt.paint', () => {
   test('toasts once at start, marks nothing, and the band still lists the typos', async ($, on) => {
     const world = setup(on, macFinds({ word: 'teh', choices: ['the'] }), '')
